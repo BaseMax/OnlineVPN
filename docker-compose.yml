@@ -1,30 +1,12 @@
 services:
-  vpn-app-1:
+  vpn-app:
     build: .
-    container_name: onlinevpn-app-1
+    container_name: onlinevpn-app
     ports:
       - "9080:5000"
     environment:
       - PORT=5000
       - INSTANCE=1
-    restart: unless-stopped
-    networks:
-      - vpn-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  vpn-app-2:
-    build: .
-    container_name: onlinevpn-app-2
-    ports:
-      - "9081:5000"
-    environment:
-      - PORT=5000
-      - INSTANCE=2
     restart: unless-stopped
     networks:
       - vpn-network
