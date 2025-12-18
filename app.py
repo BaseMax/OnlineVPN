@@ -340,6 +340,8 @@ def handle_redirect_response(resp, upstream_resp, domains: list):
 def process_proxy_request(base_url: str, path: str, domains: list):
     """Process proxy request and return response"""
     target_url = build_target_url(base_url, path)
+    if not is_safe_url(target_url):
+        return "Blocked internal address", 403
     upstream_resp = forward_request(target_url, request.method)
     resp = create_response(upstream_resp, base_url, domains)
     resp = add_cors_headers(resp)
