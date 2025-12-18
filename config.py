@@ -19,3 +19,8 @@ PROCESSABLE_CONTENT_TYPES = [
     'application/json',
     'application/xml'
 ]
+
+# SSL verification settings
+# Set to False to disable SSL certificate verification
+# This allows proxying sites with SSL issues or self-signed certificates
+SSL_VERIFY = False

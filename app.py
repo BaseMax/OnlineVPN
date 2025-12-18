@@ -4,7 +4,12 @@ from urllib.parse import urlparse, urljoin
 import socket
 import ipaddress
 import re
-from config import MIRROR_DOMAIN
+import urllib3
+from config import MIRROR_DOMAIN, SSL_VERIFY
+
+# Disable SSL warnings when SSL verification is disabled
+if not SSL_VERIFY:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 
@@ -168,7 +173,7 @@ def proxy():
         headers = {
             'User-Agent': 'OnlineVPN-Proxy/1.0'
         }
-        response = requests.get(target_url, headers=headers, timeout=30, allow_redirects=True)
+        response = requests.get(target_url, headers=headers, timeout=30, allow_redirects=True, verify=SSL_VERIFY)
         content = response.text
         
         # Get content type
