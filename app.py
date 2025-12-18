@@ -94,10 +94,26 @@ def encode_domain(domain):
 def decode_domain(encoded):
     """Decode domain from URL path"""
     # Add back padding if needed
+    # Using (4 - len % 4) % 4 instead of 4 - (len % 4) to handle the case
+    # where len % 4 == 0 (no padding needed), which would incorrectly give 4
     padding = (4 - len(encoded) % 4) % 4
     if padding:
         encoded += '=' * padding
     return base64.urlsafe_b64decode(encoded.encode()).decode()
+
+def stream_response_content(response_obj):
+    """
+    Generator function to stream response content efficiently.
+    Properly manages response lifecycle with error handling and cleanup.
+    """
+    try:
+        for chunk in response_obj.iter_content(chunk_size=8192):
+            yield chunk
+    except Exception as e:
+        logger.error(f"Error streaming content: {e}")
+        raise
+    finally:
+        response_obj.close()
 
 def replace_urls_in_content(content, domains, content_type, base_url=None):
     """
@@ -296,26 +312,21 @@ def proxy_resource(encoded_domain_and_path):
                 proxy_response = Response(content, mimetype=content_type)
             else:
                 # Stream binary content efficiently without loading into memory
-                # Create a generator that properly manages the response lifecycle
-                def generate(resp):
-                    try:
-                        for chunk in resp.iter_content(chunk_size=8192):
-                            yield chunk
-                    except Exception as e:
-                        logger.error(f"Error streaming content: {e}")
-                        raise
-                    finally:
-                        resp.close()
-                
-                proxy_response = Response(generate(response), mimetype=content_type)
+                proxy_response = Response(stream_response_content(response), mimetype=content_type)
             
             # Apply the headers we copied earlier
             for header_name, header_value in headers_to_copy.items():
                 proxy_response.headers[header_name] = header_value
             
             return proxy_response
-        except Exception:
-            # Ensure response is closed if an error occurs
+        except (ValueError, UnicodeDecodeError) as e:
+            # Handle decoding errors
+            logger.error(f"Content processing error: {e}")
+            response.close()
+            return f"Error processing content: {str(e)}", 500
+        except Exception as e:
+            # Handle other unexpected errors
+            logger.error(f"Unexpected error in proxy route: {e}")
             response.close()
             raise
     
