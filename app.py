@@ -295,7 +295,8 @@ def create_cors_preflight_response():
 def build_target_url(base_url: str, path: str) -> str:
     """Build target URL from base and path"""
     if path:
-        target = urljoin(base_url + '/', path)
+        base = base_url if base_url.endswith('/') else base_url + '/'
+        target = urljoin(base, path)
     else:
         target = base_url
     if request.query_string:

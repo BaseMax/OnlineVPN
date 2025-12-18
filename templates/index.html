@@ -168,12 +168,12 @@
     
     <script>
         // Form now submits via POST, no need for JavaScript submission
-        // But we can normalize the domains input before submission
+        // Normalize domain input before submission
         document.getElementById('proxyForm').addEventListener('submit', function(e) {
             const domainsText = document.getElementById('domains').value;
             
             if (domainsText.trim()) {
-                // Convert newlines to commas for better UX
+                // Normalize: convert newlines to commas, remove extra spaces, filter empty values
                 const domains = domainsText
                     .replace(/[\n\r]+/g, ',')
                     .split(',')
