@@ -7,8 +7,6 @@ Main Flask application for proxying and mirroring web content
 from flask import Flask, request, render_template_string, Response
 import requests
 import re
-from urllib.parse import urlparse, urljoin
-from bs4 import BeautifulSoup
 import config
 
 app = Flask(__name__)
@@ -144,18 +142,11 @@ def replace_urls_in_content(content, domains_to_replace, content_type):
         # Escape special regex characters in domain
         escaped_domain = re.escape(domain)
         
-        # Replace all variations: http://domain, https://domain, http://www.domain, https://www.domain
-        # Pattern matches: (http|https)://(www.)?domain(/rest/of/url)
-        patterns = [
-            # Match http://domain or https://domain
-            (rf'https?://{escaped_domain}(/[^\s"\'\)]*)?', rf'https://{MIRROR_DOMAIN}\1'),
-            # Match http://www.domain or https://www.domain (if domain doesn't start with www)
-            (rf'https?://www\.{escaped_domain}(/[^\s"\'\)]*)?', rf'https://{MIRROR_DOMAIN}\1') if not domain.startswith('www.') else (None, None),
-        ]
-        
-        for pattern, replacement in patterns:
-            if pattern:
-                content = re.sub(pattern, replacement, content)
+        # Replace all variations: http://domain, https://domain
+        # Pattern matches: (http|https)://domain(/rest/of/url)
+        pattern = rf'https?://{escaped_domain}(/[^\s"\'\)]*)?'
+        replacement = rf'https://{MIRROR_DOMAIN}\1'
+        content = re.sub(pattern, replacement, content)
     
     return content
 
