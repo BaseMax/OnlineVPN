@@ -1,10 +1,25 @@
-from flask import Flask, request, render_template, Response
-import requests
-from urllib.parse import urlparse, urljoin
 import socket
 import ipaddress
 import re
-from config import MIRROR_DOMAIN
+import logging
+from urllib.parse import urlparse, urljoin
+
+from flask import Flask, request, render_template, Response
+import requests
+import urllib3
+
+from config import MIRROR_DOMAIN, SSL_VERIFY
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Disable SSL warnings when SSL verification is disabled
+if not SSL_VERIFY:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    logger.warning("SSL certificate verification is DISABLED. This may expose you to security risks.")
+else:
+    logger.info("SSL certificate verification is ENABLED.")
 
 app = Flask(__name__)
 
@@ -168,7 +183,7 @@ def proxy():
         headers = {
             'User-Agent': 'OnlineVPN-Proxy/1.0'
         }
-        response = requests.get(target_url, headers=headers, timeout=30, allow_redirects=True)
+        response = requests.get(target_url, headers=headers, timeout=30, allow_redirects=True, verify=SSL_VERIFY)
         content = response.text
         
         # Get content type
