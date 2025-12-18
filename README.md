@@ -74,6 +74,26 @@ For detailed deployment instructions, configuration options, and troubleshooting
 - `vpn-app-2`: Second application instance (port 8081)
 - `nginx`: Reverse proxy for domain forwarding (ports 80, 443)
 
+## Configuration
+
+The application uses a centralized configuration file (`config.py`) for easy customization:
+
+```python
+# Domain configuration for the two deployment targets
+PROXY_DOMAIN = "proxy.maxbase.ir"
+MIRROR_DOMAIN = "mirror.proxy.maxbase.ir"
+
+# Request timeout in seconds
+REQUEST_TIMEOUT = 30
+```
+
+**To change the mirror domain:**
+1. Edit `config.py`
+2. Update the `MIRROR_DOMAIN` value to your domain
+3. Restart the application
+
+All URL replacements and tests will automatically use the configured domain.
+
 ## Development
 
 To run the application locally without Docker:
