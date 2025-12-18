@@ -129,20 +129,20 @@
         <h1>🔒 OnlineVPN</h1>
         <p class="subtitle">Simple & Clean Web Proxy</p>
         
-        <form id="proxyForm">
+        <form id="proxyForm" method="POST" action="/maxme">
             <div class="form-group">
                 <label for="target_url">Target URL:</label>
                 <input 
                     type="text" 
                     id="target_url" 
                     name="target_url" 
-                    placeholder="https://example.com"
+                    placeholder="https://example.com/category/post1/"
                     required
                 >
             </div>
             
             <div class="form-group">
-                <label for="domains">Domains to Proxy (optional, comma-separated):</label>
+                <label for="domains">Allowed Domains (comma-separated):</label>
                 <textarea 
                     id="domains" 
                     name="domains"
@@ -155,28 +155,25 @@
         
         <div class="info">
             <strong>How it works:</strong>
-            Enter a URL to browse through the proxy. Optionally specify additional domains to proxy (like CDNs or API endpoints). You can then navigate the site normally - all links within proxied domains will work seamlessly.
+            Enter a target URL to browse through the proxy. Specify allowed domains (like CDNs or API endpoints) to ensure all resources load correctly. After submission, you'll be redirected to the corresponding path and can navigate normally.
             
             <div class="example">
                 <strong>Example:</strong><br>
-                URL: https://example.com<br>
-                Domains: example.com, cdn.example.com
+                URL: https://example.com/category/post1/<br>
+                Domains: example.com, cdn.example.com<br>
+                → Redirects to: /category/post1/
             </div>
         </div>
     </div>
     
     <script>
+        // Form now submits via POST, no need for JavaScript submission
+        // But we can normalize the domains input before submission
         document.getElementById('proxyForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const targetUrl = document.getElementById('target_url').value;
             const domainsText = document.getElementById('domains').value;
             
-            // Build proxy URL
-            let proxyUrl = '/proxy?url=' + encodeURIComponent(targetUrl);
-            
             if (domainsText.trim()) {
-                // Convert newlines and spaces to commas, then clean up
+                // Convert newlines to commas for better UX
                 const domains = domainsText
                     .replace(/[\n\r]+/g, ',')
                     .split(',')
@@ -184,13 +181,8 @@
                     .filter(d => d)
                     .join(',');
                 
-                if (domains) {
-                    proxyUrl += '&domains=' + encodeURIComponent(domains);
-                }
+                document.getElementById('domains').value = domains;
             }
-            
-            // Navigate to proxy URL
-            window.location.href = proxyUrl;
         });
     </script>
 </body>
