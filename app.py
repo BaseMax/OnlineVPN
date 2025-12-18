@@ -2,6 +2,7 @@ import socket
 import ipaddress
 import re
 import logging
+import base64
 from urllib.parse import urlparse, urljoin
 
 from flask import Flask, request, render_template, Response
@@ -85,7 +86,6 @@ def is_domain_match(base_domain, domains):
 
 def encode_domain(domain):
     """Encode domain for use in URL path"""
-    import base64
     # Use URL-safe base64 encoding
     encoded = base64.urlsafe_b64encode(domain.encode()).decode()
     # Remove padding characters for cleaner URLs
@@ -93,7 +93,6 @@ def encode_domain(domain):
 
 def decode_domain(encoded):
     """Decode domain from URL path"""
-    import base64
     # Add back padding if needed
     padding = 4 - (len(encoded) % 4)
     if padding != 4:
@@ -227,10 +226,11 @@ def proxy_resource(encoded_domain_and_path):
     try:
         # Split the encoded domain from the path
         parts = encoded_domain_and_path.split('/', 1)
-        if len(parts) < 1:
+        encoded_domain = parts[0]
+        
+        if not encoded_domain:
             return "Error: Invalid proxy URL format", 400
         
-        encoded_domain = parts[0]
         resource_path = '/' + parts[1] if len(parts) > 1 else '/'
         
         # Decode the domain
@@ -286,7 +286,8 @@ def proxy_resource(encoded_domain_and_path):
             proxy_response = Response(content, mimetype=content_type)
         else:
             # Stream binary content without processing
-            proxy_response = Response(response.iter_content(chunk_size=8192), mimetype=content_type)
+            # Use the raw content for binary files
+            proxy_response = Response(response.content, mimetype=content_type)
         
         # Copy relevant headers from the original response
         for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
