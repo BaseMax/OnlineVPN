@@ -163,6 +163,36 @@ def fetch_and_process_url(url, domains_to_replace):
         Response object with processed content
     """
     try:
+        # Basic URL validation
+        if not url.startswith(('http://', 'https://')):
+            raise ValueError("URL must start with http:// or https://")
+        
+        # Prevent access to local/private networks (basic SSRF protection)
+        # Note: This is a proxy service, so SSRF is inherent to its functionality
+        # Users should be aware of the security implications
+        import socket
+        from urllib.parse import urlparse
+        
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        
+        if hostname:
+            # Block localhost and private IP ranges
+            if hostname.lower() in ('localhost', '127.0.0.1', '0.0.0.0', '::1'):
+                raise ValueError("Access to localhost is not allowed")
+            
+            # Check for private IP ranges
+            try:
+                ip = socket.gethostbyname(hostname)
+                # Block private IP ranges: 10.x.x.x, 172.16-31.x.x, 192.168.x.x
+                if ip.startswith(('10.', '172.16.', '172.17.', '172.18.', '172.19.', 
+                                  '172.20.', '172.21.', '172.22.', '172.23.', '172.24.',
+                                  '172.25.', '172.26.', '172.27.', '172.28.', '172.29.',
+                                  '172.30.', '172.31.', '192.168.')):
+                    raise ValueError("Access to private IP ranges is not allowed")
+            except socket.gaierror:
+                pass  # DNS resolution failed, let requests handle it
+        
         # Fetch the content
         headers = {
             'User-Agent': config.USER_AGENT
@@ -188,6 +218,20 @@ def fetch_and_process_url(url, domains_to_replace):
             content_type=content_type
         )
         
+    except ValueError as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Error</title></head>
+        <body>
+            <h1>Invalid URL</h1>
+            <p>The URL provided is not valid or not allowed</p>
+            <p>Error: {str(e)}</p>
+            <p><a href="/">Go back</a></p>
+        </body>
+        </html>
+        """
+        return Response(error_html, status=400, content_type='text/html')
     except requests.RequestException as e:
         error_html = f"""
         <!DOCTYPE html>
@@ -260,4 +304,7 @@ def proxy_path(path):
 
 if __name__ == '__main__':
     # Run the application
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Note: debug=True is only for development. In production, use a WSGI server like Gunicorn
+    import os
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
