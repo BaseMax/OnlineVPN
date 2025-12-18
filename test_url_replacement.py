@@ -3,7 +3,7 @@
 Test script for URL replacement functionality
 """
 
-from app import replace_urls_in_content
+from app import replace_urls_in_content, encode_domain
 from config import MIRROR_DOMAIN
 
 def test_url_replacement():
@@ -21,10 +21,12 @@ def test_url_replacement():
     result = replace_urls_in_content(content, domains, "text/html")
     print("Original:", content[:100])
     print("Result:", result[:200])
-    assert f"https://{MIRROR_DOMAIN}/watch?v=abc123" in result
-    assert f"https://{MIRROR_DOMAIN}/watch?v=xyz789" in result
-    assert f"https://{MIRROR_DOMAIN}/watch?v=def456" in result
-    assert f"https://{MIRROR_DOMAIN}/watch?v=ghi012" in result
+    encoded_youtube = encode_domain("youtube.com")
+    encoded_www_youtube = encode_domain("www.youtube.com")
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=abc123" in result
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=xyz789" in result
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_www_youtube}/watch?v=def456" in result
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_www_youtube}/watch?v=ghi012" in result
     print("✓ Test 1 passed\n")
     
     # Test case 2: URLs in JavaScript
@@ -36,8 +38,9 @@ def test_url_replacement():
     domains = ["youtube.com"]
     result = replace_urls_in_content(content, domains, "application/javascript")
     print("Result:", result)
-    assert f"https://{MIRROR_DOMAIN}/api/video" in result
-    assert f"https://{MIRROR_DOMAIN}/data" in result
+    encoded_youtube = encode_domain("youtube.com")
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/api/video" in result
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/data" in result
     print("✓ Test 2 passed\n")
     
     # Test case 3: Multiple domains
@@ -50,9 +53,12 @@ def test_url_replacement():
     domains = ["google.com", "youtube.com", "facebook.com"]
     result = replace_urls_in_content(content, domains, "text/html")
     print("Result:", result)
-    assert f"https://{MIRROR_DOMAIN}/search" in result
-    assert f"https://{MIRROR_DOMAIN}/watch" in result
-    assert f"https://{MIRROR_DOMAIN}/page" in result
+    encoded_google = encode_domain("google.com")
+    encoded_youtube = encode_domain("youtube.com")
+    encoded_facebook = encode_domain("facebook.com")
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_google}/search" in result
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch" in result
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_facebook}/page" in result
     print("✓ Test 3 passed\n")
     
     # Test case 4: URLs with complex paths
@@ -64,8 +70,9 @@ def test_url_replacement():
     domains = ["youtube.com"]
     result = replace_urls_in_content(content, domains, "text/html")
     print("Result:", result)
-    assert f"https://{MIRROR_DOMAIN}/watch?v=abc&t=10s&list=xyz" in result
-    assert f"https://{MIRROR_DOMAIN}/img/thumbnail/abc.jpg" in result
+    encoded_youtube = encode_domain("youtube.com")
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=abc&t=10s&list=xyz" in result
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/img/thumbnail/abc.jpg" in result
     print("✓ Test 4 passed\n")
     
     # Test case 5: URLs without path
@@ -90,8 +97,9 @@ def test_url_replacement():
     domains = ["youtube.com"]
     result = replace_urls_in_content(content, domains, "text/html")
     print("Result:", result)
+    encoded_youtube = encode_domain("youtube.com")
     assert "https://google.com/search" in result  # Should remain unchanged
-    assert f"https://{MIRROR_DOMAIN}/watch" in result
+    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch" in result
     print("✓ Test 6 passed\n")
     
     # Test case 7: Handle relative URLs with base_url
@@ -106,10 +114,11 @@ def test_url_replacement():
     base_url = "https://youtube.com/home"
     result = replace_urls_in_content(content, domains, "text/html", base_url)
     print("Result:", result)
-    assert f'href="https://{MIRROR_DOMAIN}/watch?v=abc123"' in result
-    assert f'src="https://{MIRROR_DOMAIN}/img/thumbnail.jpg"' in result
-    assert f'src="https://{MIRROR_DOMAIN}/js/player.js"' in result
-    assert f'href="https://{MIRROR_DOMAIN}/api/data"' in result
+    encoded_youtube = encode_domain("youtube.com")
+    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=abc123"' in result
+    assert f'src="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/img/thumbnail.jpg"' in result
+    assert f'src="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/js/player.js"' in result
+    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/api/data"' in result
     print("✓ Test 7 passed\n")
     
     # Test case 8: Don't replace protocol-relative URLs as relative paths
@@ -122,10 +131,11 @@ def test_url_replacement():
     base_url = "https://youtube.com"
     result = replace_urls_in_content(content, domains, "text/html", base_url)
     print("Result:", result)
+    encoded_youtube = encode_domain("youtube.com")
     # Protocol-relative should be replaced
-    assert f'href="https://{MIRROR_DOMAIN}/watch"' in result
+    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch"' in result
     # Count should be 2 (both should be replaced)
-    assert result.count(f'{MIRROR_DOMAIN}/watch') == 2
+    assert result.count(f'{MIRROR_DOMAIN}/p/{encoded_youtube}/watch') == 2
     print("✓ Test 8 passed\n")
     
     # Test case 9: Don't replace relative URLs if base domain doesn't match
@@ -155,12 +165,13 @@ def test_url_replacement():
     base_url = "https://youtube.com"
     result = replace_urls_in_content(content, domains, "text/html", base_url)
     print("Result:", result)
+    encoded_youtube = encode_domain("youtube.com")
     # All should be replaced
     assert result.count(MIRROR_DOMAIN) == 4
-    assert f'href="https://{MIRROR_DOMAIN}/watch?v=abc"' in result
-    assert f'href="https://{MIRROR_DOMAIN}/watch?v=def"' in result
-    assert f'src="https://{MIRROR_DOMAIN}/img/thumb1.jpg"' in result
-    assert f'src="https://{MIRROR_DOMAIN}/img/thumb2.jpg"' in result
+    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=abc"' in result
+    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=def"' in result
+    assert f'src="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/img/thumb1.jpg"' in result
+    assert f'src="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/img/thumb2.jpg"' in result
     print("✓ Test 10 passed\n")
     
     print("=" * 50)

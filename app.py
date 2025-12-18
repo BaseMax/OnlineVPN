@@ -8,7 +8,7 @@ from flask import Flask, request, render_template, Response
 import requests
 import urllib3
 
-from config import MIRROR_DOMAIN, SSL_VERIFY
+from config import MIRROR_DOMAIN, SSL_VERIFY, REQUEST_TIMEOUT, PROCESSABLE_CONTENT_TYPES
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -83,6 +83,23 @@ def is_domain_match(base_domain, domains):
     
     return False
 
+def encode_domain(domain):
+    """Encode domain for use in URL path"""
+    import base64
+    # Use URL-safe base64 encoding
+    encoded = base64.urlsafe_b64encode(domain.encode()).decode()
+    # Remove padding characters for cleaner URLs
+    return encoded.rstrip('=')
+
+def decode_domain(encoded):
+    """Decode domain from URL path"""
+    import base64
+    # Add back padding if needed
+    padding = 4 - (len(encoded) % 4)
+    if padding != 4:
+        encoded += '=' * padding
+    return base64.urlsafe_b64decode(encoded.encode()).decode()
+
 def replace_urls_in_content(content, domains, content_type, base_url=None):
     """
     Replace URLs in content with proxy URLs.
@@ -106,15 +123,16 @@ def replace_urls_in_content(content, domains, content_type, base_url=None):
             
         # Escape special regex characters in domain
         escaped_domain = re.escape(domain)
+        encoded_domain = encode_domain(domain)
         
         # Pattern 1: Match full URLs (http://domain.com/path or https://domain.com/path)
         # This pattern captures the path after the domain
         pattern1 = r'https?://' + escaped_domain + r'(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
         
         def replace_full_url(match):
-            path = match.group(1) if match.group(1) else ''
-            # Return the proxy URL with the path
-            return f'https://{MIRROR_DOMAIN}{path}'
+            path = match.group(1) if match.group(1) else '/'
+            # Return the proxy URL with encoded domain and path
+            return f'https://{MIRROR_DOMAIN}/p/{encoded_domain}{path}'
         
         content = re.sub(pattern1, replace_full_url, content)
         
@@ -122,8 +140,8 @@ def replace_urls_in_content(content, domains, content_type, base_url=None):
         pattern2 = r'//' + escaped_domain + r'(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
         
         def replace_protocol_relative(match):
-            path = match.group(1) if match.group(1) else ''
-            return f'https://{MIRROR_DOMAIN}{path}'
+            path = match.group(1) if match.group(1) else '/'
+            return f'https://{MIRROR_DOMAIN}/p/{encoded_domain}{path}'
         
         content = re.sub(pattern2, replace_protocol_relative, content)
     
@@ -135,6 +153,7 @@ def replace_urls_in_content(content, domains, content_type, base_url=None):
         
         # Only replace relative URLs if the base domain is in our domains list
         if is_domain_match(base_domain, domains):
+            encoded_base_domain = encode_domain(base_domain)
             # Match relative URLs: /path but not // (protocol-relative)
             # Look for href="/path", src="/path", etc.
             # Pattern matches: attribute="/path" where path doesn't start with another /
@@ -143,7 +162,7 @@ def replace_urls_in_content(content, domains, content_type, base_url=None):
             def replace_relative_url(match):
                 prefix = match.group(1)  # The attribute and opening quote
                 path = match.group(2)     # The relative path
-                return f'{prefix}https://{MIRROR_DOMAIN}{path}'
+                return f'{prefix}https://{MIRROR_DOMAIN}/p/{encoded_base_domain}{path}'
             
             content = re.sub(pattern3, replace_relative_url, content)
     
@@ -197,6 +216,91 @@ def proxy():
     
     except Exception as e:
         return f"Error fetching URL: {str(e)}", 500
+
+@app.route('/p/<path:encoded_domain_and_path>')
+def proxy_resource(encoded_domain_and_path):
+    """
+    Proxy route that handles all resource requests.
+    URL format: /p/<encoded_domain>/<path>
+    Example: /p/eW91dHViZS5jb20/watch?v=123
+    """
+    try:
+        # Split the encoded domain from the path
+        parts = encoded_domain_and_path.split('/', 1)
+        if len(parts) < 1:
+            return "Error: Invalid proxy URL format", 400
+        
+        encoded_domain = parts[0]
+        resource_path = '/' + parts[1] if len(parts) > 1 else '/'
+        
+        # Decode the domain
+        try:
+            original_domain = decode_domain(encoded_domain)
+        except Exception as e:
+            logger.error(f"Failed to decode domain '{encoded_domain}': {e}")
+            return "Error: Invalid encoded domain", 400
+        
+        # Construct the original URL
+        original_url = f'https://{original_domain}{resource_path}'
+        
+        # Add query string if present
+        if request.query_string:
+            original_url += '?' + request.query_string.decode()
+        
+        logger.info(f"Proxying request: {original_url}")
+        
+        # Validate URL to prevent SSRF attacks
+        if not is_safe_url(original_url):
+            return "Error: Access to internal/private networks is not allowed", 403
+        
+        # Fetch the content from the original URL
+        headers = {
+            'User-Agent': request.headers.get('User-Agent', 'OnlineVPN-Proxy/1.0'),
+            'Accept': request.headers.get('Accept', '*/*'),
+            'Accept-Encoding': request.headers.get('Accept-Encoding', 'gzip, deflate'),
+            'Accept-Language': request.headers.get('Accept-Language', 'en-US,en;q=0.9'),
+        }
+        
+        response = requests.get(
+            original_url,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+            allow_redirects=True,
+            verify=SSL_VERIFY,
+            stream=True
+        )
+        
+        # Get content type
+        content_type = response.headers.get('content-type', 'application/octet-stream')
+        
+        # Check if content should be processed for URL replacement
+        should_process = any(ct in content_type for ct in PROCESSABLE_CONTENT_TYPES)
+        
+        if should_process:
+            # Read and process the content
+            content = response.text
+            # Replace URLs with the original domain in the list
+            content = replace_urls_in_content(content, [original_domain], content_type, base_url=original_url)
+            
+            # Create response with processed content
+            proxy_response = Response(content, mimetype=content_type)
+        else:
+            # Stream binary content without processing
+            proxy_response = Response(response.iter_content(chunk_size=8192), mimetype=content_type)
+        
+        # Copy relevant headers from the original response
+        for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
+            if header_name in response.headers:
+                proxy_response.headers[header_name] = response.headers[header_name]
+        
+        return proxy_response
+    
+    except requests.RequestException as e:
+        logger.error(f"Request error: {e}")
+        return f"Error fetching resource: {str(e)}", 502
+    except Exception as e:
+        logger.error(f"Proxy error: {e}")
+        return f"Error processing request: {str(e)}", 500
 
 @app.route('/health')
 def health():
