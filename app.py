@@ -14,6 +14,10 @@ from config import (
     REQUEST_TIMEOUT,
     PROCESSABLE_CONTENT_TYPES,
     PROXY_ROUTE_PREFIX,
+    CORS_ALLOW_ORIGINS,
+    CORS_ALLOW_METHODS,
+    CORS_ALLOW_HEADERS,
+    CORS_EXPOSE_HEADERS,
 )
 
 # ------------------------------------------------------------------------------
@@ -148,6 +152,16 @@ def build_target_url(base_url: str, path: str) -> str:
     return target
 
 
+def apply_cors_headers(resp: Response):
+    resp.headers["Access-Control-Allow-Origin"] = CORS_ALLOW_ORIGINS
+    resp.headers["Access-Control-Allow-Methods"] = CORS_ALLOW_METHODS
+    resp.headers["Access-Control-Allow-Headers"] = CORS_ALLOW_HEADERS
+    resp.headers["Access-Control-Expose-Headers"] = CORS_EXPOSE_HEADERS
+    resp.headers["Access-Control-Max-Age"] = "86400"
+    resp.headers["Vary"] = "Origin"
+    return resp
+
+
 def create_proxy_response(upstream, base_url: str, domains: list[str]):
     content = upstream.content
     content_type = upstream.headers.get("Content-Type", "")
@@ -166,7 +180,8 @@ def create_proxy_response(upstream, base_url: str, domains: list[str]):
         if k.lower() not in ("content-length", "content-encoding"):
             resp.headers[k] = v
 
-    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp = apply_cors_headers(resp)
+    
     return resp
 
 

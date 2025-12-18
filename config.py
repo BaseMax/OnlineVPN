@@ -5,6 +5,48 @@ Configuration file for OnlineVPN
 import os
 
 
+CORS_ALLOW_ORIGINS = "*"
+CORS_ALLOW_METHODS = (
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD"
+)
+CORS_ALLOW_HEADERS = (
+    "Accept, "
+    "Accept-Encoding, "
+    "Accept-Language, "
+    "Authorization, "
+    "Cache-Control, "
+    "Connection, "
+    "Content-Length, "
+    "Content-Range, "
+    "Content-Type, "
+    "DNT, "
+    "If-Modified-Since, "
+    "If-None-Match, "
+    "Origin, "
+    "Pragma, "
+    "Range, "
+    "Referer, "
+    "User-Agent, "
+    "X-Requested-With"
+)
+CORS_EXPOSE_HEADERS = (
+    "Accept-Ranges, "
+    "Age, "
+    "Cache-Control, "
+    "Content-Disposition, "
+    "Content-Encoding, "
+    "Content-Length, "
+    "Content-Range, "
+    "Date, "
+    "ETag, "
+    "Expires, "
+    "Last-Modified, "
+    "Location, "
+    "Server, "
+    "Transfer-Encoding, "
+    "Vary"
+)
+
 # Single domain configuration for unified proxy service
 PROXY_DOMAIN = "proxy.maxbase.ir"
 
