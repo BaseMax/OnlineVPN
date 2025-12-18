@@ -4,9 +4,8 @@ Configuration file for OnlineVPN
 
 import os
 
-# Domain configuration for the two deployment targets
+# Single domain configuration for unified proxy service
 PROXY_DOMAIN = "proxy.maxbase.ir"
-MIRROR_DOMAIN = "mirror-proxy.maxbase.ir"
 
 # Request timeout in seconds
 REQUEST_TIMEOUT = 30
