@@ -46,6 +46,28 @@ def is_safe_url(url):
     except Exception:
         return False
 
+def is_domain_match(base_domain, domains):
+    """
+    Check if base_domain matches any domain in the domains list.
+    Handles exact matches and subdomain relationships.
+    
+    Args:
+        base_domain: The domain to check (e.g., "www.example.com")
+        domains: List of domains to match against
+        
+    Returns:
+        True if base_domain matches any domain in the list
+    """
+    if base_domain in domains:
+        return True
+    
+    for domain in domains:
+        # Check if base_domain is a subdomain of domain or vice versa
+        if base_domain.endswith('.' + domain) or domain.endswith('.' + base_domain):
+            return True
+    
+    return False
+
 def replace_urls_in_content(content, domains, content_type, base_url=None):
     """
     Replace URLs in content with proxy URLs.
@@ -97,7 +119,7 @@ def replace_urls_in_content(content, domains, content_type, base_url=None):
         base_domain = parsed_base.netloc
         
         # Only replace relative URLs if the base domain is in our domains list
-        if base_domain in domains or any(base_domain == d or base_domain.endswith('.' + d) or d.endswith('.' + base_domain) for d in domains):
+        if is_domain_match(base_domain, domains):
             # Match relative URLs: /path but not // (protocol-relative)
             # Look for href="/path", src="/path", etc.
             # Pattern matches: attribute="/path" where path doesn't start with another /
