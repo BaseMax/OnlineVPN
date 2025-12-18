@@ -93,6 +93,75 @@ def test_url_replacement():
     assert "https://mirror.proxy.maxbase.ir/watch" in result
     print("✓ Test 6 passed\n")
     
+    # Test case 7: Handle relative URLs with base_url
+    print("Test 7: Handle relative URLs with base_url")
+    content = """
+    <a href="/watch?v=abc123">Watch Video</a>
+    <img src="/img/thumbnail.jpg">
+    <script src="/js/player.js"></script>
+    <a href="/api/data">API Link</a>
+    """
+    domains = ["youtube.com"]
+    base_url = "https://youtube.com/home"
+    result = replace_urls_in_content(content, domains, "text/html", base_url)
+    print("Result:", result)
+    assert 'href="https://mirror.proxy.maxbase.ir/watch?v=abc123"' in result
+    assert 'src="https://mirror.proxy.maxbase.ir/img/thumbnail.jpg"' in result
+    assert 'src="https://mirror.proxy.maxbase.ir/js/player.js"' in result
+    assert 'href="https://mirror.proxy.maxbase.ir/api/data"' in result
+    print("✓ Test 7 passed\n")
+    
+    # Test case 8: Don't replace protocol-relative URLs as relative paths
+    print("Test 8: Protocol-relative URLs should be handled correctly")
+    content = """
+    <a href="//youtube.com/watch">Protocol-relative</a>
+    <a href="/watch">Relative path</a>
+    """
+    domains = ["youtube.com"]
+    base_url = "https://youtube.com"
+    result = replace_urls_in_content(content, domains, "text/html", base_url)
+    print("Result:", result)
+    # Protocol-relative should be replaced
+    assert 'href="https://mirror.proxy.maxbase.ir/watch"' in result
+    # Count should be 2 (both should be replaced)
+    assert result.count('mirror.proxy.maxbase.ir/watch') == 2
+    print("✓ Test 8 passed\n")
+    
+    # Test case 9: Don't replace relative URLs if base domain doesn't match
+    print("Test 9: Don't replace relative URLs for non-matching base domain")
+    content = """
+    <a href="/watch?v=123">Watch</a>
+    <img src="/img/pic.jpg">
+    """
+    domains = ["youtube.com"]
+    base_url = "https://google.com/search"  # Different domain
+    result = replace_urls_in_content(content, domains, "text/html", base_url)
+    print("Result:", result)
+    # Should NOT be replaced since base domain (google.com) is not in domains list
+    assert 'href="/watch?v=123"' in result
+    assert 'src="/img/pic.jpg"' in result
+    print("✓ Test 9 passed\n")
+    
+    # Test case 10: Handle mixed absolute and relative URLs
+    print("Test 10: Mixed absolute and relative URLs")
+    content = """
+    <a href="https://youtube.com/watch?v=abc">Absolute</a>
+    <a href="/watch?v=def">Relative</a>
+    <img src="https://youtube.com/img/thumb1.jpg">
+    <img src="/img/thumb2.jpg">
+    """
+    domains = ["youtube.com"]
+    base_url = "https://youtube.com"
+    result = replace_urls_in_content(content, domains, "text/html", base_url)
+    print("Result:", result)
+    # All should be replaced
+    assert result.count('mirror.proxy.maxbase.ir') == 4
+    assert 'href="https://mirror.proxy.maxbase.ir/watch?v=abc"' in result
+    assert 'href="https://mirror.proxy.maxbase.ir/watch?v=def"' in result
+    assert 'src="https://mirror.proxy.maxbase.ir/img/thumb1.jpg"' in result
+    assert 'src="https://mirror.proxy.maxbase.ir/img/thumb2.jpg"' in result
+    print("✓ Test 10 passed\n")
+    
     print("=" * 50)
     print("All tests passed successfully! ✓")
     print("=" * 50)

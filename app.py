@@ -1,8 +1,10 @@
 from flask import Flask, request, render_template, Response
 import requests
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import socket
 import ipaddress
+import re
+from config import MIRROR_DOMAIN
 
 app = Flask(__name__)
 
@@ -44,6 +46,94 @@ def is_safe_url(url):
     except Exception:
         return False
 
+def is_domain_match(base_domain, domains):
+    """
+    Check if base_domain matches any domain in the domains list.
+    Handles exact matches and subdomain relationships.
+    
+    Args:
+        base_domain: The domain to check (e.g., "www.example.com")
+        domains: List of domains to match against
+        
+    Returns:
+        True if base_domain matches any domain in the list
+    """
+    if base_domain in domains:
+        return True
+    
+    for domain in domains:
+        # Check if base_domain is a subdomain of domain or vice versa
+        if base_domain.endswith('.' + domain) or domain.endswith('.' + base_domain):
+            return True
+    
+    return False
+
+def replace_urls_in_content(content, domains, content_type, base_url=None):
+    """
+    Replace URLs in content with proxy URLs.
+    
+    Args:
+        content: The HTML/text content to process
+        domains: List of domains to replace
+        content_type: MIME type of the content
+        base_url: The base URL of the proxied page (for handling relative URLs)
+        
+    Returns:
+        Modified content with replaced URLs
+    """
+    if not domains:
+        return content
+    
+    # Create a regex pattern for matching URLs with specified domains
+    for domain in domains:
+        if not domain:
+            continue
+            
+        # Escape special regex characters in domain
+        escaped_domain = re.escape(domain)
+        
+        # Pattern 1: Match full URLs (http://domain.com/path or https://domain.com/path)
+        # This pattern captures the path after the domain
+        pattern1 = r'https?://' + escaped_domain + r'(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
+        
+        def replace_full_url(match):
+            path = match.group(1) if match.group(1) else ''
+            # Return the proxy URL with the path
+            return f'https://{MIRROR_DOMAIN}{path}'
+        
+        content = re.sub(pattern1, replace_full_url, content)
+        
+        # Pattern 2: Match protocol-relative URLs (//domain.com/path)
+        pattern2 = r'//' + escaped_domain + r'(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
+        
+        def replace_protocol_relative(match):
+            path = match.group(1) if match.group(1) else ''
+            return f'https://{MIRROR_DOMAIN}{path}'
+        
+        content = re.sub(pattern2, replace_protocol_relative, content)
+    
+    # Pattern 3: Handle relative URLs that start with / (not //)
+    # Only process if we have a base_url and domains to match against
+    if base_url and domains:
+        parsed_base = urlparse(base_url)
+        base_domain = parsed_base.netloc
+        
+        # Only replace relative URLs if the base domain is in our domains list
+        if is_domain_match(base_domain, domains):
+            # Match relative URLs: /path but not // (protocol-relative)
+            # Look for href="/path", src="/path", etc.
+            # Pattern matches: attribute="/path" where path doesn't start with another /
+            pattern3 = r'((?:href|src|action|data)=["\'])(/(?!/)[^\s"\'<>]*)'
+            
+            def replace_relative_url(match):
+                prefix = match.group(1)  # The attribute and opening quote
+                path = match.group(2)     # The relative path
+                return f'{prefix}https://{MIRROR_DOMAIN}{path}'
+            
+            content = re.sub(pattern3, replace_relative_url, content)
+    
+    return content
+
 @app.route('/')
 def index():
     """Render the home page with form to enter URL and domains to forward"""
@@ -81,16 +171,14 @@ def proxy():
         response = requests.get(target_url, headers=headers, timeout=30, allow_redirects=True)
         content = response.text
         
-        # Replace domains in the content (basic implementation)
-        # Note: This is a simple string replacement for demonstration
-        # A production implementation would need more sophisticated URL rewriting
-        for domain in domains_to_replace:
-            if domain:
-                # Replace domain references in the content
-                content = content.replace(f'http://{domain}', f'http://{request.host}')
-                content = content.replace(f'https://{domain}', f'http://{request.host}')
+        # Get content type
+        content_type = response.headers.get('content-type', 'text/html')
         
-        return Response(content, mimetype=response.headers.get('content-type', 'text/html'))
+        # Replace URLs in the content using the new function
+        # Pass the target_url as base_url to handle relative paths
+        content = replace_urls_in_content(content, domains_to_replace, content_type, base_url=target_url)
+        
+        return Response(content, mimetype=content_type)
     
     except Exception as e:
         return f"Error fetching URL: {str(e)}", 500
