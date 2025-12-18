@@ -63,55 +63,75 @@ def is_safe_url(url: str) -> bool:
         return False
 
 
-# ------------------------------------------------------------------------------
-# Cookie helpers
-# ------------------------------------------------------------------------------
-def get_base_url(full_url: str) -> str:
-    """Extract base URL (scheme + netloc) from full URL"""
-    parsed = urlparse(full_url)
-    return f"{parsed.scheme}://{parsed.netloc}"
-
-
-def get_path_from_url(full_url: str) -> str:
-    """Extract path from full URL"""
-    parsed = urlparse(full_url)
-    path = parsed.path or '/'
-    if parsed.query:
-        path += f"?{parsed.query}"
-    return path
-
-
-def set_cookies(response, base_url: str, domains: list):
-    """Set base URL and allowed domains in cookies"""
-    response.set_cookie('base_url', base_url, max_age=3600*24)
-    response.set_cookie('allowed_domains', ','.join(domains), max_age=3600*24)
-    return response
-
-
-def parse_domains_string(domains_str: str) -> list:
-    """Parse comma-separated domains string"""
-    return [d.strip() for d in domains_str.split(',') if d.strip()]
-
-
-def get_cookies():
-    """Get base URL and allowed domains from cookies"""
-    base_url = request.cookies.get('base_url', '')
-    domains = parse_domains_string(request.cookies.get('allowed_domains', ''))
-    return base_url, domains
 
 
 # ------------------------------------------------------------------------------
-# URL replacement helpers
+# URL replacement helpers (top-level, clean, main/subdomain aware)
 # ------------------------------------------------------------------------------
-def replace_domain_in_content(content: str, domain: str, proxy_base: str) -> str:
-    """Replace single domain with proxy base"""
+def get_proxy_domain_base(domain: str) -> str:
+    """Get proxy base URL for a specific domain with prefix"""
+    return f"https://{PROXY_DOMAIN}{PROXY_ROUTE_PREFIX}{domain}"
+
+def is_main_base_domain(domain: str, base_url: str) -> bool:
+    parsed = urlparse(base_url)
+    return domain.lower() == parsed.netloc.lower()
+
+def remove_scheme(url: str) -> str:
+    """Remove http/https scheme from URL"""
+    parsed = urlparse(url)
+    return f"//{parsed.netloc}{parsed.path}"
+
+def replace_absolute_urls(content: str, domains: list, base_url: str) -> str:
+    """Replace absolute URLs (http://, https://) for all allowed domains"""
+    if not domains:
+        return content
+    for domain in domains:
+        content = replace_absolute_url_for_domain(content, domain, base_url)
+    return content
+
+def replace_absolute_url_for_domain(content: str, domain: str, base_url: str) -> str:
+    """Replace absolute URLs for a single domain, using /_/domain for subdomains, root for main base domain"""
     escaped = re.escape(domain)
-    pattern = rf'(https?://(?:[\w\-]+\.)?{escaped})(/[^\s"\'<>]*)?'
+    pattern = rf'(https?://(?:[\w\-]+\.)?{escaped})(/[^
+    escaped = re.escape(domain)
     def repl(m):
-        return proxy_base + (m.group(2) if m.group(2) else '')
+        if is_main_base_domain(domain, base_url):
+            return get_proxy_base() + (m.group(2) if m.group(2) else '')
+        else:
+            return get_proxy_domain_base(domain) + (m.group(2) if m.group(2) else '')
+    return re.sub(pattern, repl, content)
+
+def replace_protocol_relative(content: str, domains: list, base_url: str) -> str:
+    """Replace protocol-relative URLs (//domain/...) for all allowed domains"""
+    if not domains:
+        return content
+    for domain in domains:
+        content = replace_protocol_relative_for_domain(content, domain, base_url)
+    return content
+
+def replace_protocol_relative_for_domain(content: str, domain: str, base_url: str) -> str:
+    """Replace protocol-relative URLs for a single domain, using /_/domain for subdomains, root for main base domain"""
+    escaped = re.escape(domain)
+    pattern = rf'//(?:[\w\-]+\.)?{escaped}'
+    def repl(m):
+        if is_main_base_domain(domain, base_url):
+            return '//' + PROXY_DOMAIN + (m.group(0)[len(f'//{domain}'):] if m.group(0).startswith(f'//{domain}') else '')
+        else:
+            return remove_scheme(get_proxy_domain_base(domain))
     return re.sub(pattern, repl, content)
 
 
+def replace_domain_in_content(content: str, domain: str, base_url: str) -> str:
+    """Replace absolute URLs for a single domain, using /_/domain for subdomains, root for main base domain"""
+    escaped = re.escape(domain)
+    pattern = rf'(https?://(?:[\w\-]+\.)?{escaped})(/[^\s"\'<>]*)?'
+    def repl(m):
+        if is_main_base_domain(domain, base_url):
+            return get_proxy_base() + (m.group(2) if m.group(2) else '')
+        else:
+            return get_proxy_domain_base(domain) + (m.group(2) if m.group(2) else '')
+    return re.sub(pattern, repl, content)
+    
 def replace_absolute_urls(content: str, domains: list, proxy_base: str) -> str:
     """Replace absolute URLs (http://, https://) in content"""
     if not domains:
@@ -171,8 +191,9 @@ def rewrite_content(content: str, base_url: str, domains: list) -> str:
     """Apply all URL replacements to content"""
     proxy_base = get_proxy_base()
     content = replace_relative_urls(content, base_url, proxy_base)
-    content = replace_protocol_relative(content, domains, proxy_base)
-    return replace_absolute_urls(content, domains, proxy_base)
+    content = replace_protocol_relative(content, domains, base_url)
+    content = replace_absolute_urls(content, domains, base_url)
+    return content
 
 
 # ------------------------------------------------------------------------------
