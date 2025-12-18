@@ -1,8 +1,48 @@
 from flask import Flask, request, render_template, Response
 import requests
 from urllib.parse import urlparse
+import socket
+import ipaddress
 
 app = Flask(__name__)
+
+# Blocked IP ranges to prevent SSRF attacks
+BLOCKED_IP_RANGES = [
+    ipaddress.ip_network('10.0.0.0/8'),      # Private network
+    ipaddress.ip_network('172.16.0.0/12'),   # Private network
+    ipaddress.ip_network('192.168.0.0/16'),  # Private network
+    ipaddress.ip_network('127.0.0.0/8'),     # Loopback
+    ipaddress.ip_network('169.254.0.0/16'),  # Link-local
+    ipaddress.ip_network('::1/128'),         # IPv6 loopback
+    ipaddress.ip_network('fc00::/7'),        # IPv6 private
+    ipaddress.ip_network('fe80::/10'),       # IPv6 link-local
+]
+
+def is_safe_url(url):
+    """Check if URL is safe to access (not targeting internal networks)"""
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        
+        if not hostname:
+            return False
+        
+        # Resolve hostname to IP
+        try:
+            ip_str = socket.gethostbyname(hostname)
+            ip = ipaddress.ip_address(ip_str)
+            
+            # Check if IP is in blocked ranges
+            for blocked_range in BLOCKED_IP_RANGES:
+                if ip in blocked_range:
+                    return False
+            
+            return True
+        except (socket.gaierror, ValueError):
+            # Could not resolve hostname, reject for safety
+            return False
+    except Exception:
+        return False
 
 @app.route('/')
 def index():
@@ -28,6 +68,10 @@ def proxy():
             return "Error: Invalid URL format", 400
     except Exception:
         return "Error: Invalid URL", 400
+    
+    # Check if URL is safe (not targeting internal networks)
+    if not is_safe_url(target_url):
+        return "Error: Access to internal/private networks is not allowed", 403
     
     try:
         # Fetch the content from the target URL with proper headers
