@@ -5,11 +5,19 @@ import socket
 import ipaddress
 import re
 import urllib3
+import logging
 from config import MIRROR_DOMAIN, SSL_VERIFY
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Disable SSL warnings when SSL verification is disabled
 if not SSL_VERIFY:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    logger.warning("SSL certificate verification is DISABLED. This may expose you to security risks.")
+else:
+    logger.info("SSL certificate verification is ENABLED.")
 
 app = Flask(__name__)
 

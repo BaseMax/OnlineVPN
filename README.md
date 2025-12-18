@@ -64,6 +64,28 @@ Nginx (Port 80/443)
 3. Optionally, enter domains to forward (one per line)
 4. Click "Access via Proxy" to fetch the content
 
+## Configuration
+
+### SSL Certificate Verification
+
+By default, SSL certificate verification is **disabled** to allow proxying sites with SSL issues or self-signed certificates. This is necessary for some sites but may expose you to security risks.
+
+To enable SSL certificate verification, set the `SSL_VERIFY` environment variable:
+
+```bash
+# Enable SSL verification
+export SSL_VERIFY=true
+python app.py
+```
+
+Or with Docker:
+
+```bash
+docker run -e SSL_VERIFY=true ...
+```
+
+**Note:** When SSL verification is disabled, a warning message will be displayed in the logs.
+
 ## Documentation
 
 For detailed deployment instructions, configuration options, and troubleshooting, see [DEPLOYMENT.md](DEPLOYMENT.md).
