@@ -4,6 +4,7 @@ Test script for URL replacement functionality
 """
 
 from app import replace_urls_in_content
+from config import MIRROR_DOMAIN
 
 def test_url_replacement():
     """Test the URL replacement logic with various scenarios"""
@@ -20,10 +21,10 @@ def test_url_replacement():
     result = replace_urls_in_content(content, domains, "text/html")
     print("Original:", content[:100])
     print("Result:", result[:200])
-    assert "https://mirror.proxy.maxbase.ir/watch?v=abc123" in result
-    assert "https://mirror.proxy.maxbase.ir/watch?v=xyz789" in result
-    assert "https://mirror.proxy.maxbase.ir/watch?v=def456" in result
-    assert "https://mirror.proxy.maxbase.ir/watch?v=ghi012" in result
+    assert f"https://{MIRROR_DOMAIN}/watch?v=abc123" in result
+    assert f"https://{MIRROR_DOMAIN}/watch?v=xyz789" in result
+    assert f"https://{MIRROR_DOMAIN}/watch?v=def456" in result
+    assert f"https://{MIRROR_DOMAIN}/watch?v=ghi012" in result
     print("✓ Test 1 passed\n")
     
     # Test case 2: URLs in JavaScript
@@ -35,8 +36,8 @@ def test_url_replacement():
     domains = ["youtube.com"]
     result = replace_urls_in_content(content, domains, "application/javascript")
     print("Result:", result)
-    assert "https://mirror.proxy.maxbase.ir/api/video" in result
-    assert "https://mirror.proxy.maxbase.ir/data" in result
+    assert f"https://{MIRROR_DOMAIN}/api/video" in result
+    assert f"https://{MIRROR_DOMAIN}/data" in result
     print("✓ Test 2 passed\n")
     
     # Test case 3: Multiple domains
@@ -49,9 +50,9 @@ def test_url_replacement():
     domains = ["google.com", "youtube.com", "facebook.com"]
     result = replace_urls_in_content(content, domains, "text/html")
     print("Result:", result)
-    assert "https://mirror.proxy.maxbase.ir/search" in result
-    assert "https://mirror.proxy.maxbase.ir/watch" in result
-    assert "https://mirror.proxy.maxbase.ir/page" in result
+    assert f"https://{MIRROR_DOMAIN}/search" in result
+    assert f"https://{MIRROR_DOMAIN}/watch" in result
+    assert f"https://{MIRROR_DOMAIN}/page" in result
     print("✓ Test 3 passed\n")
     
     # Test case 4: URLs with complex paths
@@ -63,8 +64,8 @@ def test_url_replacement():
     domains = ["youtube.com"]
     result = replace_urls_in_content(content, domains, "text/html")
     print("Result:", result)
-    assert "https://mirror.proxy.maxbase.ir/watch?v=abc&t=10s&list=xyz" in result
-    assert "https://mirror.proxy.maxbase.ir/img/thumbnail/abc.jpg" in result
+    assert f"https://{MIRROR_DOMAIN}/watch?v=abc&t=10s&list=xyz" in result
+    assert f"https://{MIRROR_DOMAIN}/img/thumbnail/abc.jpg" in result
     print("✓ Test 4 passed\n")
     
     # Test case 5: URLs without path
@@ -77,7 +78,7 @@ def test_url_replacement():
     result = replace_urls_in_content(content, domains, "text/html")
     print("Result:", result)
     # Should handle URLs without paths
-    assert "mirror.proxy.maxbase.ir" in result
+    assert MIRROR_DOMAIN in result
     print("✓ Test 5 passed\n")
     
     # Test case 6: Don't replace non-matching domains
@@ -90,7 +91,7 @@ def test_url_replacement():
     result = replace_urls_in_content(content, domains, "text/html")
     print("Result:", result)
     assert "https://google.com/search" in result  # Should remain unchanged
-    assert "https://mirror.proxy.maxbase.ir/watch" in result
+    assert f"https://{MIRROR_DOMAIN}/watch" in result
     print("✓ Test 6 passed\n")
     
     # Test case 7: Handle relative URLs with base_url
@@ -105,10 +106,10 @@ def test_url_replacement():
     base_url = "https://youtube.com/home"
     result = replace_urls_in_content(content, domains, "text/html", base_url)
     print("Result:", result)
-    assert 'href="https://mirror.proxy.maxbase.ir/watch?v=abc123"' in result
-    assert 'src="https://mirror.proxy.maxbase.ir/img/thumbnail.jpg"' in result
-    assert 'src="https://mirror.proxy.maxbase.ir/js/player.js"' in result
-    assert 'href="https://mirror.proxy.maxbase.ir/api/data"' in result
+    assert f'href="https://{MIRROR_DOMAIN}/watch?v=abc123"' in result
+    assert f'src="https://{MIRROR_DOMAIN}/img/thumbnail.jpg"' in result
+    assert f'src="https://{MIRROR_DOMAIN}/js/player.js"' in result
+    assert f'href="https://{MIRROR_DOMAIN}/api/data"' in result
     print("✓ Test 7 passed\n")
     
     # Test case 8: Don't replace protocol-relative URLs as relative paths
@@ -122,9 +123,9 @@ def test_url_replacement():
     result = replace_urls_in_content(content, domains, "text/html", base_url)
     print("Result:", result)
     # Protocol-relative should be replaced
-    assert 'href="https://mirror.proxy.maxbase.ir/watch"' in result
+    assert f'href="https://{MIRROR_DOMAIN}/watch"' in result
     # Count should be 2 (both should be replaced)
-    assert result.count('mirror.proxy.maxbase.ir/watch') == 2
+    assert result.count(f'{MIRROR_DOMAIN}/watch') == 2
     print("✓ Test 8 passed\n")
     
     # Test case 9: Don't replace relative URLs if base domain doesn't match
@@ -155,11 +156,11 @@ def test_url_replacement():
     result = replace_urls_in_content(content, domains, "text/html", base_url)
     print("Result:", result)
     # All should be replaced
-    assert result.count('mirror.proxy.maxbase.ir') == 4
-    assert 'href="https://mirror.proxy.maxbase.ir/watch?v=abc"' in result
-    assert 'href="https://mirror.proxy.maxbase.ir/watch?v=def"' in result
-    assert 'src="https://mirror.proxy.maxbase.ir/img/thumb1.jpg"' in result
-    assert 'src="https://mirror.proxy.maxbase.ir/img/thumb2.jpg"' in result
+    assert result.count(MIRROR_DOMAIN) == 4
+    assert f'href="https://{MIRROR_DOMAIN}/watch?v=abc"' in result
+    assert f'href="https://{MIRROR_DOMAIN}/watch?v=def"' in result
+    assert f'src="https://{MIRROR_DOMAIN}/img/thumb1.jpg"' in result
+    assert f'src="https://{MIRROR_DOMAIN}/img/thumb2.jpg"' in result
     print("✓ Test 10 passed\n")
     
     print("=" * 50)
