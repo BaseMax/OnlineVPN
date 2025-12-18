@@ -271,8 +271,14 @@ def proxy_resource(encoded_domain_and_path):
         )
         
         try:
-            # Get content type
+            # Get content type and copy relevant headers before processing content
             content_type = response.headers.get('content-type', 'application/octet-stream')
+            
+            # Copy headers that we want to preserve (before response is closed)
+            headers_to_copy = {}
+            for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
+                if header_name in response.headers:
+                    headers_to_copy[header_name] = response.headers[header_name]
             
             # Check if content should be processed for URL replacement
             should_process = any(ct in content_type for ct in PROCESSABLE_CONTENT_TYPES)
@@ -303,10 +309,9 @@ def proxy_resource(encoded_domain_and_path):
                 
                 proxy_response = Response(generate(response), mimetype=content_type)
             
-            # Copy relevant headers from the original response
-            for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
-                if header_name in response.headers:
-                    proxy_response.headers[header_name] = response.headers[header_name]
+            # Apply the headers we copied earlier
+            for header_name, header_value in headers_to_copy.items():
+                proxy_response.headers[header_name] = header_value
             
             return proxy_response
         except Exception:
