@@ -12,7 +12,6 @@ from config import PROXY_DOMAIN, SSL_VERIFY, REQUEST_TIMEOUT, PROCESSABLE_CONTEN
 # ------------------------------------------------------------------------------
 # Logging
 # ------------------------------------------------------------------------------
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -23,14 +22,12 @@ if not SSL_VERIFY:
 # ------------------------------------------------------------------------------
 # Flask app
 # ------------------------------------------------------------------------------
-
 app = Flask(__name__)
 app.secret_key = 'onlinevpn-secret-key-change-in-production'
 
 # ------------------------------------------------------------------------------
 # SSRF protection
 # ------------------------------------------------------------------------------
-
 BLOCKED_IP_RANGES = [
     ipaddress.ip_network('10.0.0.0/8'),
     ipaddress.ip_network('172.16.0.0/12'),
@@ -69,7 +66,6 @@ def is_safe_url(url: str) -> bool:
 # ------------------------------------------------------------------------------
 # Cookie helpers
 # ------------------------------------------------------------------------------
-
 def get_base_url(full_url: str) -> str:
     """Extract base URL (scheme + netloc) from full URL"""
     parsed = urlparse(full_url)
@@ -107,7 +103,6 @@ def get_cookies():
 # ------------------------------------------------------------------------------
 # URL replacement helpers
 # ------------------------------------------------------------------------------
-
 def replace_domain_in_content(content: str, domain: str, proxy_base: str) -> str:
     """Replace single domain with proxy base"""
     escaped = re.escape(domain)
@@ -183,7 +178,6 @@ def rewrite_content(content: str, base_url: str, domains: list) -> str:
 # ------------------------------------------------------------------------------
 # Request forwarding helpers
 # ------------------------------------------------------------------------------
-
 def should_skip_header(key: str) -> bool:
     """Check if header should be skipped"""
     skip = {'host', 'cookie', 'content-length', 'content-encoding'}
@@ -247,7 +241,6 @@ def create_response(upstream_resp, base_url: str, domains: list):
 # ------------------------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------------------------
-
 def validate_url(target_url: str) -> tuple:
     """Validate URL format and safety"""
     if not target_url:
@@ -385,7 +378,6 @@ def health():
 # ------------------------------------------------------------------------------
 # Entrypoint
 # ------------------------------------------------------------------------------
-
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('PORT', 5000))

@@ -4,8 +4,12 @@ Configuration file for OnlineVPN
 
 import os
 
+
 # Single domain configuration for unified proxy service
 PROXY_DOMAIN = "proxy.maxbase.ir"
+
+# Prefix for proxied domain routes (e.g., '/_/')
+PROXY_ROUTE_PREFIX = "/_/"
 
 # Request timeout in seconds
 REQUEST_TIMEOUT = 30
