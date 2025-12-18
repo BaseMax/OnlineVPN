@@ -1,14 +1,16 @@
 # Online VPN
 
-The OnlineVPN is a web-based platform designed in Python that provides you a home page where you can enter any page URL that you want to check/watch, and you can enter a list of domains or subdomains that you want to change and forward. The server will send a request to your page and act like a proxy.
+A clean, simple, and powerful web-based proxy platform designed in Python (Flask). Browse any website through the proxy with seamless navigation and support for both traditional and Single Page Applications (SPAs/PWAs).
 
 ## Features
 
-- 🔒 Web-based proxy service
-- 🌐 Domain forwarding and replacement
-- 🚀 Easy deployment with Docker
-- ⚖️ Load balancing with Nginx
-- 📦 Multi-instance support
+- 🔒 **Simple & Clean**: Single domain, GET-based routing with query parameters
+- 🌐 **Smart URL Replacement**: Only proxies specified domains, leaving others untouched
+- 🚀 **Easy Deployment**: Docker and docker-compose ready
+- 🔄 **Seamless Navigation**: Session-based domain tracking for natural browsing
+- 📱 **SPA/PWA Support**: Works with React, Vue, Angular, and other modern frameworks
+- ⚡ **Efficient Streaming**: Binary content streamed without memory overhead
+- 🛡️ **SSRF Protection**: Built-in security against internal network access
 
 ## Quick Start with Docker
 
@@ -57,12 +59,40 @@ Nginx (Port 80/443)
    └─→ domain2.example.com → vpn-app-2 (Port 8081)
 ```
 
-## Usage
+## How It Works
 
-1. Open the application in your browser
-2. Enter the target URL you want to access through the proxy
-3. Optionally, enter domains to forward (one per line)
-4. Click "Access via Proxy" to fetch the content
+### Simple GET-based Routing
+
+Access any website through the proxy using clean URLs:
+
+```
+https://proxy.maxbase.ir/proxy?url=https://example.com&domains=example.com,cdn.example.com
+```
+
+### Smart Domain Proxying
+
+- **Specified domains only**: Only URLs matching your domain list are proxied
+- **Session persistence**: Domains are remembered as you browse
+- **Automatic navigation**: Links within proxied pages work seamlessly
+- **External links preserved**: Non-proxied domains remain unchanged
+
+### Usage Examples
+
+**Basic usage (home page):**
+1. Visit `https://proxy.maxbase.ir/`
+2. Enter target URL: `https://example.com`
+3. (Optional) Add additional domains: `cdn.example.com, api.example.com`
+4. Click "Browse via Proxy"
+
+**Direct URL access:**
+```
+https://proxy.maxbase.ir/proxy?url=https://news.ycombinator.com&domains=news.ycombinator.com
+```
+
+**Multi-domain browsing:**
+```
+https://proxy.maxbase.ir/proxy?url=https://github.com&domains=github.com,github.githubassets.com,avatars.githubusercontent.com
+```
 
 ## Configuration
 
@@ -98,23 +128,26 @@ For detailed deployment instructions, configuration options, and troubleshooting
 
 ## Configuration
 
-The application uses a centralized configuration file (`config.py`) for easy customization:
+The application uses a centralized configuration file (`config.py`):
 
 ```python
-# Domain configuration for the two deployment targets
+# Single domain configuration
 PROXY_DOMAIN = "proxy.maxbase.ir"
-MIRROR_DOMAIN = "mirror.proxy.maxbase.ir"
 
 # Request timeout in seconds
 REQUEST_TIMEOUT = 30
+
+# Content types to process for URL replacement
+PROCESSABLE_CONTENT_TYPES = ['text/', 'application/javascript', 'application/json', 'application/xml']
+
+# SSL verification (set to True to enable)
+SSL_VERIFY = False
 ```
 
-**To change the mirror domain:**
+**To change the proxy domain:**
 1. Edit `config.py`
-2. Update the `MIRROR_DOMAIN` value to your domain
+2. Update the `PROXY_DOMAIN` value
 3. Restart the application
-
-All URL replacements and tests will automatically use the configured domain.
 
 ## Development
 

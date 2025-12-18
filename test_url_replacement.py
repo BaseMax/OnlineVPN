@@ -1,182 +1,173 @@
 #!/usr/bin/env python3
 """
-Test script for URL replacement functionality
+Test script for URL replacement functionality in the new architecture
 """
 
-from app import replace_urls_in_content, encode_domain
-from config import MIRROR_DOMAIN
+from app import replace_urls_in_content, build_proxy_url, is_domain_allowed
+from config import PROXY_DOMAIN
+
+def test_build_proxy_url():
+    """Test proxy URL building"""
+    print("Test 1: Build proxy URL")
+    
+    url = "https://example.com/page"
+    domains = ["example.com"]
+    result = build_proxy_url(url, domains)
+    
+    print(f"URL: {url}")
+    print(f"Domains: {domains}")
+    print(f"Result: {result}")
+    
+    assert f"https://{PROXY_DOMAIN}/proxy?url=" in result
+    assert "example.com" in result
+    print("✓ Test 1 passed\n")
+
+
+def test_is_domain_allowed():
+    """Test domain checking"""
+    print("Test 2: Check allowed domains")
+    
+    test_cases = [
+        ("https://example.com/page", ["example.com"], True),
+        ("https://sub.example.com/page", ["example.com"], True),
+        ("https://google.com/page", ["example.com"], False),
+        ("https://example.com/page", [], False),
+    ]
+    
+    for url, domains, expected in test_cases:
+        result = is_domain_allowed(url, domains)
+        status = "✓" if result == expected else "✗"
+        print(f"{status} {url} with {domains} -> {result} (expected {expected})")
+        assert result == expected
+    
+    print("✓ Test 2 passed\n")
+
 
 def test_url_replacement():
-    """Test the URL replacement logic with various scenarios"""
+    """Test URL replacement in content"""
+    print("Test 3: URL replacement in HTML")
     
-    # Test case 1: Basic YouTube URL replacement
-    print("Test 1: Basic YouTube URL replacement")
     content = """
-    <a href="https://youtube.com/watch?v=abc123">Watch Video</a>
-    <a href="http://youtube.com/watch?v=xyz789">Another Video</a>
-    <a href="https://www.youtube.com/watch?v=def456">Third Video</a>
-    <a href="http://www.youtube.com/watch?v=ghi012">Fourth Video</a>
+    <html>
+        <a href="https://example.com/page1">Link 1</a>
+        <a href="https://google.com/search">Link 2</a>
+        <img src="https://example.com/image.jpg">
+        <script src="/js/app.js"></script>
+    </html>
     """
-    domains = ["youtube.com", "www.youtube.com"]
-    result = replace_urls_in_content(content, domains, "text/html")
-    print("Original:", content[:100])
-    print("Result:", result[:200])
-    encoded_youtube = encode_domain("youtube.com")
-    encoded_www_youtube = encode_domain("www.youtube.com")
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=abc123" in result
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=xyz789" in result
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_www_youtube}/watch?v=def456" in result
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_www_youtube}/watch?v=ghi012" in result
-    print("✓ Test 1 passed\n")
     
-    # Test case 2: URLs in JavaScript
-    print("Test 2: URLs in JavaScript")
+    domains = ["example.com"]
+    current_url = "https://example.com/index"
+    
+    result = replace_urls_in_content(content, domains, "text/html", current_url)
+    
+    print("Original content snippet:")
+    print(content[:200])
+    print("\nProcessed content snippet:")
+    print(result[:400])
+    
+    # example.com URLs should be replaced
+    assert "/proxy?url=" in result
+    assert "example.com" in result
+    
+    # google.com should NOT be replaced (not in allowed domains)
+    assert "https://google.com/search" in result
+    
+    print("✓ Test 3 passed\n")
+
+
+def test_relative_url_replacement():
+    """Test relative URL replacement"""
+    print("Test 4: Relative URL replacement")
+    
     content = """
-    var url = "https://youtube.com/api/video";
-    fetch("http://youtube.com/data");
+    <a href="/about">About</a>
+    <img src="/images/logo.png">
     """
-    domains = ["youtube.com"]
-    result = replace_urls_in_content(content, domains, "application/javascript")
-    print("Result:", result)
-    encoded_youtube = encode_domain("youtube.com")
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/api/video" in result
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/data" in result
-    print("✓ Test 2 passed\n")
     
-    # Test case 3: Multiple domains
-    print("Test 3: Multiple domains")
+    domains = ["example.com"]
+    current_url = "https://example.com/index"
+    
+    result = replace_urls_in_content(content, domains, "text/html", current_url)
+    
+    print("Result:", result[:300])
+    
+    # Relative URLs should be converted to absolute and proxied
+    assert "/proxy?url=" in result
+    assert "example.com" in result or "example.com%2F" in result
+    
+    print("✓ Test 4 passed\n")
+
+
+def test_no_replacement_for_non_allowed():
+    """Test that non-allowed domains are not replaced"""
+    print("Test 5: No replacement for non-allowed domains")
+    
     content = """
     <a href="https://google.com/search">Google</a>
-    <a href="https://youtube.com/watch">YouTube</a>
     <a href="https://facebook.com/page">Facebook</a>
     """
-    domains = ["google.com", "youtube.com", "facebook.com"]
-    result = replace_urls_in_content(content, domains, "text/html")
-    print("Result:", result)
-    encoded_google = encode_domain("google.com")
-    encoded_youtube = encode_domain("youtube.com")
-    encoded_facebook = encode_domain("facebook.com")
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_google}/search" in result
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch" in result
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_facebook}/page" in result
-    print("✓ Test 3 passed\n")
     
-    # Test case 4: URLs with complex paths
-    print("Test 4: URLs with complex paths")
-    content = """
-    <a href="https://youtube.com/watch?v=abc&t=10s&list=xyz">Video</a>
-    <img src="http://youtube.com/img/thumbnail/abc.jpg">
-    """
-    domains = ["youtube.com"]
-    result = replace_urls_in_content(content, domains, "text/html")
-    print("Result:", result)
-    encoded_youtube = encode_domain("youtube.com")
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=abc&t=10s&list=xyz" in result
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/img/thumbnail/abc.jpg" in result
-    print("✓ Test 4 passed\n")
+    domains = ["example.com"]
+    current_url = "https://example.com/index"
     
-    # Test case 5: URLs without path
-    print("Test 5: URLs without path")
-    content = """
-    <a href="https://youtube.com">Home</a>
-    <a href="https://youtube.com/">Home with slash</a>
-    """
-    domains = ["youtube.com"]
-    result = replace_urls_in_content(content, domains, "text/html")
+    result = replace_urls_in_content(content, domains, "text/html", current_url)
+    
     print("Result:", result)
-    # Should handle URLs without paths
-    assert MIRROR_DOMAIN in result
+    
+    # Non-allowed domains should remain unchanged
+    assert "https://google.com/search" in result
+    assert "https://facebook.com/page" in result
+    
     print("✓ Test 5 passed\n")
+
+
+def test_multiple_domains():
+    """Test URL replacement with multiple allowed domains"""
+    print("Test 6: Multiple allowed domains")
     
-    # Test case 6: Don't replace non-matching domains
-    print("Test 6: Don't replace non-matching domains")
     content = """
-    <a href="https://google.com/search">Should not change</a>
-    <a href="https://youtube.com/watch">Should change</a>
+    <a href="https://example.com/page">Example</a>
+    <img src="https://cdn.example.com/image.jpg">
+    <a href="https://google.com/search">Google</a>
     """
-    domains = ["youtube.com"]
-    result = replace_urls_in_content(content, domains, "text/html")
-    print("Result:", result)
-    encoded_youtube = encode_domain("youtube.com")
-    assert "https://google.com/search" in result  # Should remain unchanged
-    assert f"https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch" in result
+    
+    domains = ["example.com", "cdn.example.com"]
+    current_url = "https://example.com/index"
+    
+    result = replace_urls_in_content(content, domains, "text/html", current_url)
+    
+    print("Result snippet:", result[:400])
+    
+    # Both example.com and cdn.example.com should be proxied
+    assert result.count("/proxy?url=") >= 2
+    
+    # google.com should NOT be proxied
+    assert "https://google.com/search" in result
+    
     print("✓ Test 6 passed\n")
-    
-    # Test case 7: Handle relative URLs with base_url
-    print("Test 7: Handle relative URLs with base_url")
-    content = """
-    <a href="/watch?v=abc123">Watch Video</a>
-    <img src="/img/thumbnail.jpg">
-    <script src="/js/player.js"></script>
-    <a href="/api/data">API Link</a>
-    """
-    domains = ["youtube.com"]
-    base_url = "https://youtube.com/home"
-    result = replace_urls_in_content(content, domains, "text/html", base_url)
-    print("Result:", result)
-    encoded_youtube = encode_domain("youtube.com")
-    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=abc123"' in result
-    assert f'src="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/img/thumbnail.jpg"' in result
-    assert f'src="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/js/player.js"' in result
-    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/api/data"' in result
-    print("✓ Test 7 passed\n")
-    
-    # Test case 8: Don't replace protocol-relative URLs as relative paths
-    print("Test 8: Protocol-relative URLs should be handled correctly")
-    content = """
-    <a href="//youtube.com/watch">Protocol-relative</a>
-    <a href="/watch">Relative path</a>
-    """
-    domains = ["youtube.com"]
-    base_url = "https://youtube.com"
-    result = replace_urls_in_content(content, domains, "text/html", base_url)
-    print("Result:", result)
-    encoded_youtube = encode_domain("youtube.com")
-    # Protocol-relative should be replaced
-    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch"' in result
-    # Count should be 2 (both should be replaced)
-    assert result.count(f'{MIRROR_DOMAIN}/p/{encoded_youtube}/watch') == 2
-    print("✓ Test 8 passed\n")
-    
-    # Test case 9: Don't replace relative URLs if base domain doesn't match
-    print("Test 9: Don't replace relative URLs for non-matching base domain")
-    content = """
-    <a href="/watch?v=123">Watch</a>
-    <img src="/img/pic.jpg">
-    """
-    domains = ["youtube.com"]
-    base_url = "https://google.com/search"  # Different domain
-    result = replace_urls_in_content(content, domains, "text/html", base_url)
-    print("Result:", result)
-    # Should NOT be replaced since base domain (google.com) is not in domains list
-    assert 'href="/watch?v=123"' in result
-    assert 'src="/img/pic.jpg"' in result
-    print("✓ Test 9 passed\n")
-    
-    # Test case 10: Handle mixed absolute and relative URLs
-    print("Test 10: Mixed absolute and relative URLs")
-    content = """
-    <a href="https://youtube.com/watch?v=abc">Absolute</a>
-    <a href="/watch?v=def">Relative</a>
-    <img src="https://youtube.com/img/thumb1.jpg">
-    <img src="/img/thumb2.jpg">
-    """
-    domains = ["youtube.com"]
-    base_url = "https://youtube.com"
-    result = replace_urls_in_content(content, domains, "text/html", base_url)
-    print("Result:", result)
-    encoded_youtube = encode_domain("youtube.com")
-    # All should be replaced
-    assert result.count(MIRROR_DOMAIN) == 4
-    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=abc"' in result
-    assert f'href="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/watch?v=def"' in result
-    assert f'src="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/img/thumb1.jpg"' in result
-    assert f'src="https://{MIRROR_DOMAIN}/p/{encoded_youtube}/img/thumb2.jpg"' in result
-    print("✓ Test 10 passed\n")
-    
-    print("=" * 50)
-    print("All tests passed successfully! ✓")
-    print("=" * 50)
+
 
 if __name__ == "__main__":
-    test_url_replacement()
+    print("=" * 60)
+    print("Testing New URL Replacement Architecture")
+    print("=" * 60)
+    print()
+    
+    try:
+        test_build_proxy_url()
+        test_is_domain_allowed()
+        test_url_replacement()
+        test_relative_url_replacement()
+        test_no_replacement_for_non_allowed()
+        test_multiple_domains()
+        
+        print("=" * 60)
+        print("All tests passed successfully! ✓")
+        print("=" * 60)
+    except AssertionError as e:
+        print(f"\n✗ Test failed: {e}")
+        raise
+    except Exception as e:
+        print(f"\n✗ Error: {e}")
+        raise

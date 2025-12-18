@@ -2,14 +2,12 @@ import socket
 import ipaddress
 import re
 import logging
-import base64
-from urllib.parse import urlparse, urljoin
-
-from flask import Flask, request, render_template, Response
+from urllib.parse import urlparse, urljoin, quote, unquote
+from flask import Flask, request, render_template, Response, redirect, url_for, session
 import requests
 import urllib3
 
-from config import MIRROR_DOMAIN, SSL_VERIFY, REQUEST_TIMEOUT, PROCESSABLE_CONTENT_TYPES
+from config import PROXY_DOMAIN, SSL_VERIFY, REQUEST_TIMEOUT, PROCESSABLE_CONTENT_TYPES
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +21,7 @@ else:
     logger.info("SSL certificate verification is ENABLED.")
 
 app = Flask(__name__)
+app.secret_key = 'onlinevpn-secret-key-change-in-production'  # Change this in production
 
 # Blocked IP ranges to prevent SSRF attacks
 BLOCKED_IP_RANGES = [
@@ -35,6 +34,7 @@ BLOCKED_IP_RANGES = [
     ipaddress.ip_network('fc00::/7'),        # IPv6 private
     ipaddress.ip_network('fe80::/10'),       # IPv6 link-local
 ]
+
 
 def is_safe_url(url):
     """Check if URL is safe to access (not targeting internal networks)"""
@@ -62,50 +62,100 @@ def is_safe_url(url):
     except Exception:
         return False
 
-def is_domain_match(base_domain, domains):
+
+def is_domain_allowed(url, allowed_domains):
+    """Check if URL's domain is in the allowed domains list"""
+    if not allowed_domains:
+        return False
+    
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc
+        
+        # Check exact match or subdomain match
+        for allowed in allowed_domains:
+            if domain == allowed or domain.endswith('.' + allowed):
+                return True
+        
+        return False
+    except Exception:
+        return False
+
+
+def build_proxy_url(target_url, allowed_domains):
+    """Build a proxy URL with query parameters"""
+    proxy_url = f'https://{PROXY_DOMAIN}/proxy?url={quote(target_url)}'
+    if allowed_domains:
+        proxy_url += '&domains=' + quote(','.join(allowed_domains))
+    return proxy_url
+
+
+def replace_urls_in_content(content, allowed_domains, content_type, current_url):
     """
-    Check if base_domain matches any domain in the domains list.
-    Handles exact matches and subdomain relationships.
+    Replace URLs in content with proxy URLs for allowed domains only.
     
     Args:
-        base_domain: The domain to check (e.g., "www.example.com")
-        domains: List of domains to match against
+        content: The HTML/text content to process
+        allowed_domains: List of domains to proxy
+        content_type: MIME type of the content
+        current_url: The current page URL (for resolving relative URLs)
         
     Returns:
-        True if base_domain matches any domain in the list
+        Modified content with replaced URLs
     """
-    if base_domain in domains:
-        return True
+    if not allowed_domains or not content:
+        return content
     
-    for domain in domains:
-        # Check if base_domain is a subdomain of domain or vice versa
-        if base_domain.endswith('.' + domain) or domain.endswith('.' + base_domain):
-            return True
+    parsed_current = urlparse(current_url)
+    current_domain = parsed_current.netloc
     
-    return False
+    # Replace absolute URLs for allowed domains
+    for domain in allowed_domains:
+        escaped_domain = re.escape(domain)
+        
+        # Match full URLs (http://domain.com/path or https://domain.com/path)
+        pattern = r'(https?://(?:[\w\-]+\.)?' + escaped_domain + r')(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
+        
+        def replace_absolute_url(match):
+            full_domain = match.group(1)
+            path = match.group(2) if match.group(2) else ''
+            original_url = f'{full_domain}{path}'
+            return build_proxy_url(original_url, allowed_domains)
+        
+        content = re.sub(pattern, replace_absolute_url, content)
+        
+        # Match protocol-relative URLs (//domain.com/path)
+        pattern2 = r'(//(?:[\w\-]+\.)?' + escaped_domain + r')(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
+        
+        def replace_protocol_relative(match):
+            full_domain = match.group(1)
+            path = match.group(2) if match.group(2) else ''
+            original_url = f'https:{full_domain}{path}'
+            return build_proxy_url(original_url, allowed_domains)
+        
+        content = re.sub(pattern2, replace_protocol_relative, content)
+    
+    # Replace relative URLs if current domain is in allowed list
+    if current_domain in allowed_domains or any(current_domain.endswith('.' + d) for d in allowed_domains):
+        # Match relative URLs in href, src, action, data attributes
+        pattern3 = r'((?:href|src|action|data)=["\'])(/(?!/)[^\s"\'<>]*)'
+        
+        def replace_relative_url(match):
+            prefix = match.group(1)
+            path = match.group(2)
+            # Build absolute URL
+            absolute_url = urljoin(current_url, path)
+            # Build proxy URL
+            proxy_url = build_proxy_url(absolute_url, allowed_domains)
+            return f'{prefix}{proxy_url}'
+        
+        content = re.sub(pattern3, replace_relative_url, content)
+    
+    return content
 
-def encode_domain(domain):
-    """Encode domain for use in URL path"""
-    # Use URL-safe base64 encoding
-    encoded = base64.urlsafe_b64encode(domain.encode()).decode()
-    # Remove padding characters for cleaner URLs
-    return encoded.rstrip('=')
-
-def decode_domain(encoded):
-    """Decode domain from URL path"""
-    # Add back padding if needed
-    # Using (4 - len % 4) % 4 instead of 4 - (len % 4) to handle the case
-    # where len % 4 == 0 (no padding needed), which would incorrectly give 4
-    padding = (4 - len(encoded) % 4) % 4
-    if padding:
-        encoded += '=' * padding
-    return base64.urlsafe_b64decode(encoded.encode()).decode()
 
 def stream_response_content(response_obj):
-    """
-    Generator function to stream response content efficiently.
-    Properly manages response lifecycle with error handling and cleanup.
-    """
+    """Generator function to stream response content efficiently"""
     try:
         for chunk in response_obj.iter_content(chunk_size=8192):
             yield chunk
@@ -115,90 +165,39 @@ def stream_response_content(response_obj):
     finally:
         response_obj.close()
 
-def replace_urls_in_content(content, domains, content_type, base_url=None):
-    """
-    Replace URLs in content with proxy URLs.
-    
-    Args:
-        content: The HTML/text content to process
-        domains: List of domains to replace
-        content_type: MIME type of the content
-        base_url: The base URL of the proxied page (for handling relative URLs)
-        
-    Returns:
-        Modified content with replaced URLs
-    """
-    if not domains:
-        return content
-    
-    # Create a regex pattern for matching URLs with specified domains
-    for domain in domains:
-        if not domain:
-            continue
-            
-        # Escape special regex characters in domain
-        escaped_domain = re.escape(domain)
-        encoded_domain = encode_domain(domain)
-        
-        # Pattern 1: Match full URLs (http://domain.com/path or https://domain.com/path)
-        # This pattern captures the path after the domain
-        pattern1 = r'https?://' + escaped_domain + r'(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
-        
-        def replace_full_url(match):
-            path = match.group(1) if match.group(1) else ''
-            # Return the proxy URL with encoded domain and path
-            return f'https://{MIRROR_DOMAIN}/p/{encoded_domain}{path}'
-        
-        content = re.sub(pattern1, replace_full_url, content)
-        
-        # Pattern 2: Match protocol-relative URLs (//domain.com/path)
-        pattern2 = r'//' + escaped_domain + r'(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
-        
-        def replace_protocol_relative(match):
-            path = match.group(1) if match.group(1) else ''
-            return f'https://{MIRROR_DOMAIN}/p/{encoded_domain}{path}'
-        
-        content = re.sub(pattern2, replace_protocol_relative, content)
-    
-    # Pattern 3: Handle relative URLs that start with / (not //)
-    # Only process if we have a base_url and domains to match against
-    if base_url and domains:
-        parsed_base = urlparse(base_url)
-        base_domain = parsed_base.netloc
-        
-        # Only replace relative URLs if the base domain is in our domains list
-        if is_domain_match(base_domain, domains):
-            encoded_base_domain = encode_domain(base_domain)
-            # Match relative URLs: /path but not // (protocol-relative)
-            # Look for href="/path", src="/path", etc.
-            # Pattern matches: attribute="/path" where path doesn't start with another /
-            pattern3 = r'((?:href|src|action|data)=["\'])(/(?!/)[^\s"\'<>]*)'
-            
-            def replace_relative_url(match):
-                prefix = match.group(1)  # The attribute and opening quote
-                path = match.group(2)     # The relative path
-                return f'{prefix}https://{MIRROR_DOMAIN}/p/{encoded_base_domain}{path}'
-            
-            content = re.sub(pattern3, replace_relative_url, content)
-    
-    return content
 
 @app.route('/')
 def index():
-    """Render the home page with form to enter URL and domains to forward"""
+    """Render the home page"""
     return render_template('index.html')
 
-@app.route('/proxy', methods=['POST'])
+
+@app.route('/proxy', methods=['GET'])
 def proxy():
-    """Handle the proxy request"""
-    target_url = request.form.get('target_url')
-    domains_to_replace = request.form.get('domains', '').split('\n')
-    domains_to_replace = [d.strip() for d in domains_to_replace if d.strip()]
+    """
+    Main proxy route - handles all proxied requests via GET parameters.
+    
+    Query parameters:
+        url: Target URL to proxy
+        domains: Comma-separated list of domains to proxy (optional)
+    """
+    target_url = request.args.get('url')
+    domains_param = request.args.get('domains', '')
     
     if not target_url:
-        return "Error: No target URL provided", 400
+        return "Error: No target URL provided. Use ?url=<target_url>&domains=<domain1,domain2>", 400
     
-    # Validate URL to prevent SSRF attacks
+    # Parse domains from comma-separated list
+    allowed_domains = [d.strip() for d in domains_param.split(',') if d.strip()]
+    
+    # Store domains in session for subsequent requests
+    if allowed_domains:
+        session['allowed_domains'] = allowed_domains
+    elif 'allowed_domains' in session:
+        # Use domains from session if not provided in URL
+        allowed_domains = session['allowed_domains']
+    
+    # Validate URL
     try:
         parsed_url = urlparse(target_url)
         if parsed_url.scheme not in ['http', 'https']:
@@ -212,73 +211,23 @@ def proxy():
     if not is_safe_url(target_url):
         return "Error: Access to internal/private networks is not allowed", 403
     
-    try:
-        # Fetch the content from the target URL with proper headers
-        headers = {
-            'User-Agent': 'OnlineVPN-Proxy/1.0'
-        }
-        response = requests.get(target_url, headers=headers, timeout=30, allow_redirects=True, verify=SSL_VERIFY)
-        content = response.text
-        
-        # Get content type
-        content_type = response.headers.get('content-type', 'text/html')
-        
-        # Replace URLs in the content using the new function
-        # Pass the target_url as base_url to handle relative paths
-        content = replace_urls_in_content(content, domains_to_replace, content_type, base_url=target_url)
-        
-        return Response(content, mimetype=content_type)
+    # If no domains specified, add the target domain automatically
+    if not allowed_domains:
+        target_domain = parsed_url.netloc
+        allowed_domains = [target_domain]
+        session['allowed_domains'] = allowed_domains
     
-    except Exception as e:
-        return f"Error fetching URL: {str(e)}", 500
-
-@app.route('/p/<path:encoded_domain_and_path>')
-def proxy_resource(encoded_domain_and_path):
-    """
-    Proxy route that handles all resource requests.
-    URL format: /p/<encoded_domain>/<path>
-    Example: /p/eW91dHViZS5jb20/watch?v=123
-    """
     try:
-        # Split the encoded domain from the path
-        parts = encoded_domain_and_path.split('/', 1)
-        encoded_domain = parts[0]
-        
-        if not encoded_domain:
-            return "Error: Invalid proxy URL format", 400
-        
-        resource_path = '/' + parts[1] if len(parts) > 1 else ''
-        
-        # Decode the domain
-        try:
-            original_domain = decode_domain(encoded_domain)
-        except Exception as e:
-            logger.error(f"Failed to decode domain '{encoded_domain}': {e}")
-            return "Error: Invalid encoded domain", 400
-        
-        # Construct the original URL
-        original_url = f'https://{original_domain}{resource_path}'
-        
-        # Add query string if present
-        if request.query_string:
-            original_url += '?' + request.query_string.decode()
-        
-        logger.info(f"Proxying request: {original_url}")
-        
-        # Validate URL to prevent SSRF attacks
-        if not is_safe_url(original_url):
-            return "Error: Access to internal/private networks is not allowed", 403
-        
-        # Fetch the content from the original URL
+        # Fetch the content from the target URL
         headers = {
-            'User-Agent': request.headers.get('User-Agent', 'OnlineVPN-Proxy/1.0'),
+            'User-Agent': request.headers.get('User-Agent', 'Mozilla/5.0 (compatible; OnlineVPN/1.0)'),
             'Accept': request.headers.get('Accept', '*/*'),
             'Accept-Encoding': request.headers.get('Accept-Encoding', 'gzip, deflate'),
             'Accept-Language': request.headers.get('Accept-Language', 'en-US,en;q=0.9'),
         }
         
         response = requests.get(
-            original_url,
+            target_url,
             headers=headers,
             timeout=REQUEST_TIMEOUT,
             allow_redirects=True,
@@ -286,50 +235,38 @@ def proxy_resource(encoded_domain_and_path):
             stream=True
         )
         
-        try:
-            # Get content type and copy relevant headers before processing content
-            content_type = response.headers.get('content-type', 'application/octet-stream')
-            
-            # Copy headers that we want to preserve (before response is closed)
-            headers_to_copy = {}
-            for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
-                if header_name in response.headers:
-                    headers_to_copy[header_name] = response.headers[header_name]
-            
-            # Check if content should be processed for URL replacement
-            should_process = any(ct in content_type for ct in PROCESSABLE_CONTENT_TYPES)
-            
-            if should_process:
-                # Read and process the content
-                content = response.text
-                # Close response since we've read all content
-                response.close()
-                
-                # Replace URLs with the original domain in the list
-                content = replace_urls_in_content(content, [original_domain], content_type, base_url=original_url)
-                
-                # Create response with processed content
-                proxy_response = Response(content, mimetype=content_type)
-            else:
-                # Stream binary content efficiently without loading into memory
-                proxy_response = Response(stream_response_content(response), mimetype=content_type)
-            
-            # Apply the headers we copied earlier
-            for header_name, header_value in headers_to_copy.items():
-                proxy_response.headers[header_name] = header_value
-            
-            return proxy_response
-        except (ValueError, UnicodeDecodeError) as e:
-            # Handle decoding errors
-            logger.error(f"Content processing error: {e}")
+        # Get content type and copy headers
+        content_type = response.headers.get('content-type', 'application/octet-stream')
+        
+        # Copy headers that we want to preserve
+        headers_to_copy = {}
+        for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
+            if header_name in response.headers:
+                headers_to_copy[header_name] = response.headers[header_name]
+        
+        # Check if content should be processed for URL replacement
+        should_process = any(ct in content_type for ct in PROCESSABLE_CONTENT_TYPES)
+        
+        if should_process:
+            # Read and process the content
+            content = response.text
             response.close()
-            return f"Error processing content: {str(e)}", 500
-        except Exception as e:
-            # Handle other unexpected errors
-            logger.error(f"Unexpected error in proxy route: {e}")
-            response.close()
-            raise
-    
+            
+            # Replace URLs with proxy URLs for allowed domains
+            content = replace_urls_in_content(content, allowed_domains, content_type, target_url)
+            
+            # Create response
+            proxy_response = Response(content, mimetype=content_type)
+        else:
+            # Stream binary content efficiently
+            proxy_response = Response(stream_response_content(response), mimetype=content_type)
+        
+        # Apply headers
+        for header_name, header_value in headers_to_copy.items():
+            proxy_response.headers[header_name] = header_value
+        
+        return proxy_response
+        
     except requests.RequestException as e:
         logger.error(f"Request error: {e}")
         return f"Error fetching resource: {str(e)}", 502
@@ -337,10 +274,12 @@ def proxy_resource(encoded_domain_and_path):
         logger.error(f"Proxy error: {e}")
         return f"Error processing request: {str(e)}", 500
 
+
 @app.route('/health')
 def health():
     """Health check endpoint"""
     return {"status": "healthy"}, 200
+
 
 if __name__ == '__main__':
     import os

@@ -69,7 +69,7 @@
         
         textarea {
             resize: vertical;
-            min-height: 120px;
+            min-height: 100px;
         }
         
         .form-group {
@@ -105,15 +105,31 @@
             margin-top: 20px;
             font-size: 13px;
             color: #666;
+            line-height: 1.6;
+        }
+        
+        .info strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        
+        .example {
+            background: #e8f4f8;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 12px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🔒 OnlineVPN</h1>
-        <p class="subtitle">Web-based Proxy Platform</p>
+        <p class="subtitle">Simple & Clean Web Proxy</p>
         
-        <form action="/proxy" method="POST">
+        <form id="proxyForm">
             <div class="form-group">
                 <label for="target_url">Target URL:</label>
                 <input 
@@ -126,20 +142,56 @@
             </div>
             
             <div class="form-group">
-                <label for="domains">Domains to Forward (one per line):</label>
+                <label for="domains">Domains to Proxy (optional, comma-separated):</label>
                 <textarea 
                     id="domains" 
                     name="domains"
-                    placeholder="example.com&#10;subdomain.example.com&#10;another.com"
+                    placeholder="example.com, cdn.example.com, api.example.com"
                 ></textarea>
             </div>
             
-            <button type="submit">Access via Proxy</button>
+            <button type="submit">Browse via Proxy</button>
         </form>
         
         <div class="info">
-            <strong>How it works:</strong> Enter a URL you want to access and optionally list domains that should be proxied. The server will fetch the page and act as a proxy, forwarding the specified domains through this service.
+            <strong>How it works:</strong>
+            Enter a URL to browse through the proxy. Optionally specify additional domains to proxy (like CDNs or API endpoints). You can then navigate the site normally - all links within proxied domains will work seamlessly.
+            
+            <div class="example">
+                <strong>Example:</strong><br>
+                URL: https://example.com<br>
+                Domains: example.com, cdn.example.com
+            </div>
         </div>
     </div>
+    
+    <script>
+        document.getElementById('proxyForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const targetUrl = document.getElementById('target_url').value;
+            const domainsText = document.getElementById('domains').value;
+            
+            // Build proxy URL
+            let proxyUrl = '/proxy?url=' + encodeURIComponent(targetUrl);
+            
+            if (domainsText.trim()) {
+                // Convert newlines and spaces to commas, then clean up
+                const domains = domainsText
+                    .replace(/[\n\r]+/g, ',')
+                    .split(',')
+                    .map(d => d.trim())
+                    .filter(d => d)
+                    .join(',');
+                
+                if (domains) {
+                    proxyUrl += '&domains=' + encodeURIComponent(domains);
+                }
+            }
+            
+            // Navigate to proxy URL
+            window.location.href = proxyUrl;
+        });
+    </script>
 </body>
 </html>
