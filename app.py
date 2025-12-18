@@ -43,14 +43,25 @@ BLOCKED_IP_RANGES = [
 ]
 
 
+def get_ip_from_url(url: str) -> str:
+    """Extract IP address from URL hostname"""
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        return None
+    return socket.gethostbyname(parsed.hostname)
+
+
+def is_ip_blocked(ip_str: str) -> bool:
+    """Check if IP is in blocked ranges"""
+    ip = ipaddress.ip_address(ip_str)
+    return any(ip in net for net in BLOCKED_IP_RANGES)
+
+
 def is_safe_url(url: str) -> bool:
     """Check if URL doesn't point to internal network"""
     try:
-        parsed = urlparse(url)
-        if not parsed.hostname:
-            return False
-        ip = ipaddress.ip_address(socket.gethostbyname(parsed.hostname))
-        return not any(ip in net for net in BLOCKED_IP_RANGES)
+        ip_str = get_ip_from_url(url)
+        return ip_str and not is_ip_blocked(ip_str)
     except Exception:
         return False
 
@@ -81,11 +92,15 @@ def set_cookies(response, base_url: str, domains: list):
     return response
 
 
+def parse_domains_string(domains_str: str) -> list:
+    """Parse comma-separated domains string"""
+    return [d.strip() for d in domains_str.split(',') if d.strip()]
+
+
 def get_cookies():
     """Get base URL and allowed domains from cookies"""
     base_url = request.cookies.get('base_url', '')
-    domains_str = request.cookies.get('allowed_domains', '')
-    domains = [d.strip() for d in domains_str.split(',') if d.strip()]
+    domains = parse_domains_string(request.cookies.get('allowed_domains', ''))
     return base_url, domains
 
 
@@ -93,86 +108,104 @@ def get_cookies():
 # URL replacement helpers
 # ------------------------------------------------------------------------------
 
+def replace_domain_in_content(content: str, domain: str, proxy_base: str) -> str:
+    """Replace single domain with proxy base"""
+    escaped = re.escape(domain)
+    pattern = rf'(https?://(?:[\w\-]+\.)?{escaped})'
+    return re.sub(pattern, proxy_base, content)
+
+
 def replace_absolute_urls(content: str, domains: list, proxy_base: str) -> str:
     """Replace absolute URLs (http://, https://) in content"""
     if not domains:
         return content
     for domain in domains:
-        escaped = re.escape(domain)
-        pattern = rf'(https?://(?:[\w\-]+\.)?{escaped})'
-        content = re.sub(pattern, proxy_base, content)
+        content = replace_domain_in_content(content, domain, proxy_base)
     return content
+
+
+def remove_scheme(url: str) -> str:
+    """Remove http/https scheme from URL"""
+    return url.replace('https:', '').replace('http:', '')
+
+
+def replace_protocol_rel_domain(content: str, domain: str, proxy_base: str) -> str:
+    """Replace protocol-relative domain"""
+    escaped = re.escape(domain)
+    pattern = rf'//(?:[\w\-]+\.)?{escaped}'
+    return re.sub(pattern, remove_scheme(proxy_base), content)
 
 
 def replace_protocol_relative(content: str, domains: list, proxy_base: str) -> str:
     """Replace protocol-relative URLs (//) in content"""
     if not domains:
         return content
-    proxy_no_scheme = proxy_base.replace('https:', '').replace('http:', '')
     for domain in domains:
-        escaped = re.escape(domain)
-        pattern = rf'//(?:[\w\-]+\.)?{escaped}'
-        content = re.sub(pattern, proxy_no_scheme, content)
+        content = replace_protocol_rel_domain(content, domain, proxy_base)
     return content
+
+
+def replace_slash_paths(content: str, proxy_base: str) -> str:
+    """Replace /path style URLs"""
+    pattern = r'((?:href|src|action)=["\'])(/(?!/)[^"\'>]+)'
+    return re.sub(pattern, rf'\1{proxy_base}\2', content)
+
+
+def replace_dot_paths(content: str, proxy_base: str) -> str:
+    """Replace ./path style URLs"""
+    pattern = r'((?:href|src|action)=["\'])(\.\/[^"\'>]+)'
+    return re.sub(pattern, rf'\1{proxy_base}/\2', content)
 
 
 def replace_relative_urls(content: str, base_url: str, proxy_base: str) -> str:
     """Replace relative URLs (/, ./) in content"""
-    # Replace src="/path" and href="/path" but not "//"
-    content = re.sub(
-        r'((?:href|src|action)=["\'])(/(?!/)[^"\'>]+)',
-        rf'\1{proxy_base}\2',
-        content
-    )
-    # Replace src="./path" and href="./path"
-    content = re.sub(
-        r'((?:href|src|action)=["\'])(\.\/[^"\'>]+)',
-        rf'\1{proxy_base}/\2',
-        content
-    )
+    content = replace_slash_paths(content, proxy_base)
+    content = replace_dot_paths(content, proxy_base)
     return content
+
+
+def get_proxy_base() -> str:
+    """Get proxy base URL"""
+    return f"https://{PROXY_DOMAIN}"
 
 
 def rewrite_content(content: str, base_url: str, domains: list) -> str:
     """Apply all URL replacements to content"""
-    proxy_base = f"https://{PROXY_DOMAIN}"
-    # First replace relative URLs to avoid conflicts
+    proxy_base = get_proxy_base()
     content = replace_relative_urls(content, base_url, proxy_base)
-    # Then replace protocol-relative URLs
     content = replace_protocol_relative(content, domains, proxy_base)
-    # Finally replace absolute URLs
-    content = replace_absolute_urls(content, domains, proxy_base)
-    return content
+    return replace_absolute_urls(content, domains, proxy_base)
 
 
 # ------------------------------------------------------------------------------
 # Request forwarding helpers
 # ------------------------------------------------------------------------------
 
+def should_skip_header(key: str) -> bool:
+    """Check if header should be skipped"""
+    skip = {'host', 'cookie', 'content-length', 'content-encoding'}
+    return key.lower() in skip
+
+
 def copy_request_headers() -> dict:
     """Copy relevant headers from incoming request"""
-    headers = {}
-    skip_headers = {'host', 'cookie', 'content-length', 'content-encoding'}
-    for key, value in request.headers:
-        if key.lower() not in skip_headers:
-            headers[key] = value
+    headers = {k: v for k, v in request.headers if not should_skip_header(k)}
     if 'Accept-Encoding' not in headers:
         headers['Accept-Encoding'] = 'identity'
     return headers
 
 
+def get_request_data():
+    """Get request body data"""
+    return request.get_data() if request.data else None
+
+
 def forward_request(target_url: str, method: str) -> requests.Response:
     """Forward request to target URL with same method and data"""
-    headers = copy_request_headers()
-    data = request.get_data() if request.data else None
     return requests.request(
-        method=method,
-        url=target_url,
-        headers=headers,
-        data=data,
-        timeout=REQUEST_TIMEOUT,
-        allow_redirects=False,
-        verify=SSL_VERIFY,
+        method=method, url=target_url, headers=copy_request_headers(),
+        data=get_request_data(), timeout=REQUEST_TIMEOUT,
+        allow_redirects=False, verify=SSL_VERIFY
     )
 
 
@@ -181,114 +214,162 @@ def should_process_content(content_type: str) -> bool:
     return any(ct in content_type.lower() for ct in PROCESSABLE_CONTENT_TYPES)
 
 
+def create_text_response(upstream_resp, base_url: str, domains: list):
+    """Create response for text content"""
+    text = rewrite_content(upstream_resp.text, base_url, domains)
+    resp = Response(text, status=upstream_resp.status_code)
+    content_type = upstream_resp.headers.get('Content-Type', '')
+    resp.headers['Content-Type'] = content_type
+    return resp
+
+
+def create_binary_response(upstream_resp):
+    """Create response for binary content"""
+    resp = Response(upstream_resp.content, status=upstream_resp.status_code)
+    content_type = upstream_resp.headers.get('Content-Type', '')
+    if content_type:
+        resp.headers['Content-Type'] = content_type
+    return resp
+
+
 def create_response(upstream_resp, base_url: str, domains: list):
     """Create Flask response from upstream response"""
-    content_type = upstream_resp.headers.get('Content-Type', '').lower()
-    if should_process_content(content_type):
-        text = upstream_resp.text
-        text = rewrite_content(text, base_url, domains)
-        resp = Response(text, status=upstream_resp.status_code)
-        resp.headers['Content-Type'] = content_type
-    else:
-        resp = Response(upstream_resp.content, status=upstream_resp.status_code)
-        if content_type:
-            resp.headers['Content-Type'] = content_type
-    return resp
+    ct = upstream_resp.headers.get('Content-Type', '').lower()
+    if should_process_content(ct):
+        return create_text_response(upstream_resp, base_url, domains)
+    return create_binary_response(upstream_resp)
 
 
 # ------------------------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------------------------
 
+def validate_url(target_url: str) -> tuple:
+    """Validate URL format and safety"""
+    if not target_url:
+        return False, "Missing target URL"
+    parsed = urlparse(target_url)
+    if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+        return False, "Invalid URL"
+    return (True, None) if is_safe_url(target_url) else (False, "Blocked internal address")
+
+
+def get_domains_from_input(domains_input: str, default_domain: str) -> list:
+    """Parse domains from input or use default"""
+    domains = parse_domains_string(domains_input)
+    return domains if domains else [default_domain]
+
+
+def handle_setup_post():
+    """Handle POST request for proxy setup"""
+    target_url = request.form.get('target_url', '').strip()
+    valid, error = validate_url(target_url)
+    if not valid:
+        return error, 400 if "Missing" in error else 403
+    parsed = urlparse(target_url)
+    domains = get_domains_from_input(request.form.get('domains', '').strip(), parsed.netloc)
+    resp = make_response(redirect(get_path_from_url(target_url)))
+    return set_cookies(resp, get_base_url(target_url), domains)
+
+
 @app.route('/maxme', methods=['GET', 'POST'])
 def setup_proxy():
     """Show form and handle proxy setup"""
     if request.method == 'GET':
         return render_template('index.html')
-    
-    target_url = request.form.get('target_url', '').strip()
-    domains_input = request.form.get('domains', '').strip()
-    
-    if not target_url:
-        return "Missing target URL", 400
-    
-    parsed = urlparse(target_url)
-    if parsed.scheme not in ('http', 'https') or not parsed.netloc:
-        return "Invalid URL", 400
-    
-    if not is_safe_url(target_url):
-        return "Blocked internal address", 403
-    
-    base_url = get_base_url(target_url)
-    path = get_path_from_url(target_url)
-    
-    domains = [d.strip() for d in domains_input.split(',') if d.strip()]
-    if not domains:
-        domains = [parsed.netloc]
-    
-    resp = make_response(redirect(path))
-    set_cookies(resp, base_url, domains)
+    return handle_setup_post()
+
+
+def create_cors_preflight_response():
+    """Create CORS preflight response"""
+    resp = Response('', status=200)
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
+    resp.headers['Access-Control-Allow-Headers'] = '*'
     return resp
+
+
+def build_target_url(base_url: str, path: str) -> str:
+    """Build target URL from base and path"""
+    target = f"{base_url}/{path}" if path else base_url
+    if request.query_string:
+        target += f"?{request.query_string.decode()}"
+    return target
+
+
+def add_cors_headers(resp):
+    """Add CORS headers to response"""
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    return resp
+
+
+def build_redirect_path(parsed_loc) -> str:
+    """Build redirect path from parsed location"""
+    path = parsed_loc.path or '/'
+    return f"{path}?{parsed_loc.query}" if parsed_loc.query else path
+
+
+def rewrite_redirect_location(location: str, domains: list) -> str:
+    """Rewrite redirect location header"""
+    parsed_loc = urlparse(location)
+    if parsed_loc.netloc in domains or not parsed_loc.netloc:
+        return build_redirect_path(parsed_loc)
+    return location
+
+
+def is_redirect(status_code: int) -> bool:
+    """Check if status code is redirect"""
+    return 300 <= status_code < 400
+
+
+def handle_redirect_response(resp, upstream_resp, domains: list):
+    """Handle redirect responses"""
+    if is_redirect(upstream_resp.status_code):
+        location = upstream_resp.headers.get('Location')
+        if location:
+            resp.headers['Location'] = rewrite_redirect_location(location, domains)
+    return resp
+
+
+def process_proxy_request(base_url: str, path: str, domains: list):
+    """Process proxy request and return response"""
+    target_url = build_target_url(base_url, path)
+    upstream_resp = forward_request(target_url, request.method)
+    resp = create_response(upstream_resp, base_url, domains)
+    resp = add_cors_headers(resp)
+    return handle_redirect_response(resp, upstream_resp, domains)
+
+
+def handle_proxy_error(e: requests.RequestException):
+    """Handle proxy request error"""
+    logger.exception("Upstream request failed")
+    return f"Upstream error: {e}", 502
+
+
+def handle_non_options_request(path):
+    """Handle non-OPTIONS proxy requests"""
+    base_url, domains = get_cookies()
+    if not base_url:
+        return redirect('/maxme')
+    try:
+        return process_proxy_request(base_url, path, domains)
+    except requests.RequestException as e:
+        return handle_proxy_error(e)
 
 
 @app.route('/', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
 @app.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
 def proxy_request(path):
     """Handle all requests and proxy to target"""
-    # Handle CORS preflight
     if request.method == 'OPTIONS':
-        resp = Response('', status=200)
-        resp.headers['Access-Control-Allow-Origin'] = '*'
-        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
-        resp.headers['Access-Control-Allow-Headers'] = '*'
-        return resp
-    
-    base_url, domains = get_cookies()
-    
-    if not base_url:
-        return redirect('/maxme')
-    
-    # Build target URL
-    if path:
-        target_url = f"{base_url}/{path}"
-    else:
-        target_url = base_url
-    
-    if request.query_string:
-        target_url += f"?{request.query_string.decode()}"
-    
-    try:
-        upstream_resp = forward_request(target_url, request.method)
-        resp = create_response(upstream_resp, base_url, domains)
-        
-        # Add CORS headers
-        resp.headers['Access-Control-Allow-Origin'] = '*'
-        
-        # Handle redirects
-        if 300 <= upstream_resp.status_code < 400:
-            location = upstream_resp.headers.get('Location')
-            if location:
-                # Rewrite redirect location
-                parsed_loc = urlparse(location)
-                if parsed_loc.netloc in domains or not parsed_loc.netloc:
-                    new_path = parsed_loc.path or '/'
-                    if parsed_loc.query:
-                        new_path += f"?{parsed_loc.query}"
-                    resp.headers['Location'] = new_path
-                else:
-                    resp.headers['Location'] = location
-        
-        return resp
-        
-    except requests.RequestException as e:
-        logger.exception("Upstream request failed")
-        return f"Upstream error: {e}", 502
+        return create_cors_preflight_response()
+    return handle_non_options_request(path)
 
 
 @app.route('/health')
 def health():
-    """Health check endpoint"""
-    return {"status": "ok"}, 200
+    """Health check"""
+    return {"status": "ok"}
 
 
 # ------------------------------------------------------------------------------
