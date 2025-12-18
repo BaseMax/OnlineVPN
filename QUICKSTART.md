@@ -4,11 +4,11 @@ Get OnlineVPN up and running in 5 minutes!
 
 ## Prerequisites
 
-- Docker (20.10+)
-- Docker Compose (2.0+)
-- Two domain names (optional, can use localhost for testing)
+- Python 3.8+ OR Docker (20.10+)
+- Docker Compose (2.0+) for Docker deployment
+- Domain name (optional, can use localhost for testing)
 
-## Installation Steps
+## Quick Start (Python)
 
 ### 1. Clone Repository
 
@@ -17,37 +17,63 @@ git clone https://github.com/BaseMax/OnlineVPN.git
 cd OnlineVPN
 ```
 
-### 2. Configure Domains (Optional)
+### 2. Install Dependencies
 
-For production with custom domains:
-
-**Edit nginx/conf.d/vpn-app-1.conf:**
-```nginx
-server_name your-domain-1.com;  # Replace domain1.example.com
+```bash
+pip install -r requirements.txt
 ```
 
-**Edit nginx/conf.d/vpn-app-2.conf:**
-```nginx
-server_name your-domain-2.com;  # Replace domain2.example.com
+### 3. Run Application
+
+```bash
+python app.py
+```
+
+Application starts on http://localhost:5000
+
+### 4. Use the Proxy
+
+**Via Web Interface:**
+1. Open http://localhost:5000 in your browser
+2. Enter target URL: `https://news.ycombinator.com`
+3. Enter domains (optional): `news.ycombinator.com`
+4. Click "Browse via Proxy"
+
+**Direct URL Access:**
+```
+http://localhost:5000/proxy?url=https://news.ycombinator.com&domains=news.ycombinator.com
+```
+
+## Quick Start (Docker)
+
+### 1. Clone Repository
+
+```bash
+git clone https://github.com/BaseMax/OnlineVPN.git
+cd OnlineVPN
+```
+
+### 2. Configure Domain (Optional)
+
+Edit `config.py`:
+```python
+PROXY_DOMAIN = "your-domain.com"  # Or use localhost
 ```
 
 ### 3. Start Services
 
 ```bash
-docker compose up -d
+docker-compose up -d
 ```
-
-Wait 30-60 seconds for services to be healthy.
 
 ### 4. Verify Installation
 
 ```bash
-# Check service status
-docker compose ps
-
 # Check health
 curl http://localhost:8080/health
-curl http://localhost:8081/health
+
+# Test proxy
+curl "http://localhost:8080/proxy?url=https://example.com&domains=example.com"
 ```
 
 Expected output:
