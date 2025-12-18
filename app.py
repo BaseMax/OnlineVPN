@@ -129,7 +129,7 @@ def replace_urls_in_content(content, domains, content_type, base_url=None):
         pattern1 = r'https?://' + escaped_domain + r'(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
         
         def replace_full_url(match):
-            path = match.group(1) if match.group(1) else '/'
+            path = match.group(1) if match.group(1) else ''
             # Return the proxy URL with encoded domain and path
             return f'https://{MIRROR_DOMAIN}/p/{encoded_domain}{path}'
         
@@ -139,7 +139,7 @@ def replace_urls_in_content(content, domains, content_type, base_url=None):
         pattern2 = r'//' + escaped_domain + r'(/[^\s"\'\)<>]*|(?=["\'\s\)<>]|$))'
         
         def replace_protocol_relative(match):
-            path = match.group(1) if match.group(1) else '/'
+            path = match.group(1) if match.group(1) else ''
             return f'https://{MIRROR_DOMAIN}/p/{encoded_domain}{path}'
         
         content = re.sub(pattern2, replace_protocol_relative, content)
@@ -231,7 +231,7 @@ def proxy_resource(encoded_domain_and_path):
         if not encoded_domain:
             return "Error: Invalid proxy URL format", 400
         
-        resource_path = '/' + parts[1] if len(parts) > 1 else '/'
+        resource_path = '/' + parts[1] if len(parts) > 1 else ''
         
         # Decode the domain
         try:
@@ -285,9 +285,12 @@ def proxy_resource(encoded_domain_and_path):
             # Create response with processed content
             proxy_response = Response(content, mimetype=content_type)
         else:
-            # Stream binary content without processing
-            # Use the raw content for binary files
-            proxy_response = Response(response.content, mimetype=content_type)
+            # Stream binary content efficiently without loading into memory
+            def generate():
+                for chunk in response.iter_content(chunk_size=8192):
+                    yield chunk
+            
+            proxy_response = Response(generate(), mimetype=content_type)
         
         # Copy relevant headers from the original response
         for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
