@@ -110,18 +110,6 @@ def replace_domain_in_content(content: str, domain: str, proxy_base: str) -> str
     def repl(m):
         return proxy_base + (m.group(2) if m.group(2) else '')
     return re.sub(pattern, repl, content)
-    def get_proxy_domain_base(domain: str) -> str:
-        """Get proxy base URL for a specific domain with prefix"""
-        return f"https://{PROXY_DOMAIN}{PROXY_ROUTE_PREFIX}{domain}"
-
-    def replace_domain_in_content(content: str, domain: str) -> str:
-        """Replace single domain with proxy base + prefix"""
-        escaped = re.escape(domain)
-        pattern = rf'(https?://(?:[\w\-]+\.)?{escaped})(/[^\s"\'<>]*)?'
-        proxy_base = get_proxy_domain_base(domain)
-        def repl(m):
-            return proxy_base + (m.group(2) if m.group(2) else '')
-        return re.sub(pattern, repl, content)
 
 
 def replace_absolute_urls(content: str, domains: list, proxy_base: str) -> str:
@@ -131,13 +119,6 @@ def replace_absolute_urls(content: str, domains: list, proxy_base: str) -> str:
     for domain in domains:
         content = replace_domain_in_content(content, domain, proxy_base)
     return content
-    def replace_absolute_urls(content: str, domains: list) -> str:
-        """Replace absolute URLs (http://, https://) in content"""
-        if not domains:
-            return content
-        for domain in domains:
-            content = replace_domain_in_content(content, domain)
-        return content
 
 
 def remove_scheme(url: str) -> str:
@@ -151,12 +132,6 @@ def replace_protocol_rel_domain(content: str, domain: str, proxy_base: str) -> s
     escaped = re.escape(domain)
     pattern = rf'//(?:[\w\-]+\.)?{escaped}'
     return re.sub(pattern, remove_scheme(proxy_base), content)
-    def replace_protocol_rel_domain(content: str, domain: str) -> str:
-        """Replace protocol-relative domain with proxy + prefix"""
-        escaped = re.escape(domain)
-        pattern = rf'//(?:[\w\-]+\.)?{escaped}'
-        proxy_base = remove_scheme(get_proxy_domain_base(domain))
-        return re.sub(pattern, proxy_base, content)
 
 
 def replace_protocol_relative(content: str, domains: list, proxy_base: str) -> str:
@@ -166,13 +141,6 @@ def replace_protocol_relative(content: str, domains: list, proxy_base: str) -> s
     for domain in domains:
         content = replace_protocol_rel_domain(content, domain, proxy_base)
     return content
-    def replace_protocol_relative(content: str, domains: list) -> str:
-        """Replace protocol-relative URLs (//) in content"""
-        if not domains:
-            return content
-        for domain in domains:
-            content = replace_protocol_rel_domain(content, domain)
-        return content
 
 
 def replace_slash_paths(content: str, proxy_base: str) -> str:
