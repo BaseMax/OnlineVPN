@@ -126,7 +126,8 @@ def forward_request(target_url: str):
         for key, value in request.headers.items()
         if key.lower() not in ("host", "content-length")
     }
-
+    headers['Accept-Encoding'] = 'identity'
+    
     return requests.request(
         method=request.method,
         url=target_url,
