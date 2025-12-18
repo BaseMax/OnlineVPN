@@ -270,38 +270,49 @@ def proxy_resource(encoded_domain_and_path):
             stream=True
         )
         
-        # Get content type
-        content_type = response.headers.get('content-type', 'application/octet-stream')
-        
-        # Check if content should be processed for URL replacement
-        should_process = any(ct in content_type for ct in PROCESSABLE_CONTENT_TYPES)
-        
-        if should_process:
-            # Read and process the content
-            content = response.text
-            # Replace URLs with the original domain in the list
-            content = replace_urls_in_content(content, [original_domain], content_type, base_url=original_url)
+        try:
+            # Get content type
+            content_type = response.headers.get('content-type', 'application/octet-stream')
             
-            # Create response with processed content
-            proxy_response = Response(content, mimetype=content_type)
-        else:
-            # Stream binary content efficiently without loading into memory
-            # Create a generator that properly manages the response lifecycle
-            def generate(resp):
-                try:
-                    for chunk in resp.iter_content(chunk_size=8192):
-                        yield chunk
-                finally:
-                    resp.close()
+            # Check if content should be processed for URL replacement
+            should_process = any(ct in content_type for ct in PROCESSABLE_CONTENT_TYPES)
             
-            proxy_response = Response(generate(response), mimetype=content_type)
-        
-        # Copy relevant headers from the original response
-        for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
-            if header_name in response.headers:
-                proxy_response.headers[header_name] = response.headers[header_name]
-        
-        return proxy_response
+            if should_process:
+                # Read and process the content
+                content = response.text
+                # Close response since we've read all content
+                response.close()
+                
+                # Replace URLs with the original domain in the list
+                content = replace_urls_in_content(content, [original_domain], content_type, base_url=original_url)
+                
+                # Create response with processed content
+                proxy_response = Response(content, mimetype=content_type)
+            else:
+                # Stream binary content efficiently without loading into memory
+                # Create a generator that properly manages the response lifecycle
+                def generate(resp):
+                    try:
+                        for chunk in resp.iter_content(chunk_size=8192):
+                            yield chunk
+                    except Exception as e:
+                        logger.error(f"Error streaming content: {e}")
+                        raise
+                    finally:
+                        resp.close()
+                
+                proxy_response = Response(generate(response), mimetype=content_type)
+            
+            # Copy relevant headers from the original response
+            for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
+                if header_name in response.headers:
+                    proxy_response.headers[header_name] = response.headers[header_name]
+            
+            return proxy_response
+        except Exception:
+            # Ensure response is closed if an error occurs
+            response.close()
+            raise
     
     except requests.RequestException as e:
         logger.error(f"Request error: {e}")
