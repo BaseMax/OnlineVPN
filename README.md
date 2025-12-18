@@ -1,4 +1,4 @@
-# OnlineVPN
+# Online VPN
 
 The OnlineVPN is a web-based platform designed in Python that provides you a home page where you can enter any page URL that you want to check/watch, and you can enter a list of domains or subdomains that you want to change and forward. The server will send a request to your page and act like a proxy.
 
