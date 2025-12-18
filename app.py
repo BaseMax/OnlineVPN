@@ -94,8 +94,8 @@ def encode_domain(domain):
 def decode_domain(encoded):
     """Decode domain from URL path"""
     # Add back padding if needed
-    padding = 4 - (len(encoded) % 4)
-    if padding != 4:
+    padding = (4 - len(encoded) % 4) % 4
+    if padding:
         encoded += '=' * padding
     return base64.urlsafe_b64decode(encoded.encode()).decode()
 
@@ -286,11 +286,15 @@ def proxy_resource(encoded_domain_and_path):
             proxy_response = Response(content, mimetype=content_type)
         else:
             # Stream binary content efficiently without loading into memory
-            def generate():
-                for chunk in response.iter_content(chunk_size=8192):
-                    yield chunk
+            # Create a generator that properly manages the response lifecycle
+            def generate(resp):
+                try:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        yield chunk
+                finally:
+                    resp.close()
             
-            proxy_response = Response(generate(), mimetype=content_type)
+            proxy_response = Response(generate(response), mimetype=content_type)
         
         # Copy relevant headers from the original response
         for header_name in ['Cache-Control', 'ETag', 'Last-Modified', 'Expires']:
