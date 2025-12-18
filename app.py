@@ -1,11 +1,13 @@
-from flask import Flask, request, render_template, Response
-import requests
-from urllib.parse import urlparse, urljoin
 import socket
 import ipaddress
 import re
-import urllib3
 import logging
+from urllib.parse import urlparse, urljoin
+
+from flask import Flask, request, render_template, Response
+import requests
+import urllib3
+
 from config import MIRROR_DOMAIN, SSL_VERIFY
 
 # Configure logging

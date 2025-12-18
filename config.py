@@ -2,6 +2,8 @@
 Configuration file for OnlineVPN
 """
 
+import os
+
 # Domain configuration for the two deployment targets
 PROXY_DOMAIN = "proxy.maxbase.ir"
 MIRROR_DOMAIN = "mirror.proxy.maxbase.ir"
@@ -25,5 +27,4 @@ PROCESSABLE_CONTENT_TYPES = [
 # This allows proxying sites with SSL issues or self-signed certificates
 # WARNING: Disabling SSL verification can expose you to man-in-the-middle attacks
 # Can be overridden with SSL_VERIFY environment variable (set to 'true' to enable)
-import os
 SSL_VERIFY = os.environ.get('SSL_VERIFY', 'false').lower() == 'true'
