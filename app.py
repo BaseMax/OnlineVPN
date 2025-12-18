@@ -193,8 +193,9 @@ def should_skip_header(key: str) -> bool:
 def copy_request_headers() -> dict:
     """Copy relevant headers from incoming request"""
     headers = {k: v for k, v in request.headers if not should_skip_header(k)}
-    if 'Accept-Encoding' not in headers:
-        headers['Accept-Encoding'] = 'identity'
+    # if 'Accept-Encoding' not in headers:
+    #     headers['Accept-Encoding'] = 'identity'
+    headers['Accept-Encoding'] = 'identity'
     return headers
 
 
