@@ -123,7 +123,7 @@ def test_replace_relative_urls():
     # Check that relative URLs are replaced with proxy base
     assert 'href="https://proxy.maxbase.ir/about"' in result
     assert 'src="https://proxy.maxbase.ir/images/logo.png"' in result
-    assert 'src="https://proxy.maxbase.ir/./js/app.js"' in result
+    assert 'src="https://proxy.maxbase.ir/js/app.js"' in result
     
     print("✓ Test 5 passed\n")
 

@@ -43,7 +43,7 @@ BLOCKED_IP_RANGES = [
 ]
 
 
-def get_ip_from_url(url: str) -> str:
+def get_ip_from_url(url: str):
     """Extract IP address from URL hostname"""
     parsed = urlparse(url)
     if not parsed.hostname:
@@ -111,8 +111,10 @@ def get_cookies():
 def replace_domain_in_content(content: str, domain: str, proxy_base: str) -> str:
     """Replace single domain with proxy base"""
     escaped = re.escape(domain)
-    pattern = rf'(https?://(?:[\w\-]+\.)?{escaped})'
-    return re.sub(pattern, proxy_base, content)
+    pattern = rf'(https?://(?:[\w\-]+\.)?{escaped})(/[^\s"\'<>]*)?'
+    def repl(m):
+        return proxy_base + (m.group(2) if m.group(2) else '')
+    return re.sub(pattern, repl, content)
 
 
 def replace_absolute_urls(content: str, domains: list, proxy_base: str) -> str:
@@ -126,7 +128,8 @@ def replace_absolute_urls(content: str, domains: list, proxy_base: str) -> str:
 
 def remove_scheme(url: str) -> str:
     """Remove http/https scheme from URL"""
-    return url.replace('https:', '').replace('http:', '')
+    parsed = urlparse(url)
+    return f"//{parsed.netloc}{parsed.path}"
 
 
 def replace_protocol_rel_domain(content: str, domain: str, proxy_base: str) -> str:
@@ -153,7 +156,7 @@ def replace_slash_paths(content: str, proxy_base: str) -> str:
 
 def replace_dot_paths(content: str, proxy_base: str) -> str:
     """Replace ./path style URLs"""
-    pattern = r'((?:href|src|action)=["\'])(\.\/[^"\'>]+)'
+    pattern = r'((?:href|src|action)=["\'])\.\/([^"\'>]+)'
     return re.sub(pattern, rf'\1{proxy_base}/\2', content)
 
 
@@ -291,7 +294,10 @@ def create_cors_preflight_response():
 
 def build_target_url(base_url: str, path: str) -> str:
     """Build target URL from base and path"""
-    target = f"{base_url}/{path}" if path else base_url
+    if path:
+        target = urljoin(base_url + '/', path)
+    else:
+        target = base_url
     if request.query_string:
         target += f"?{request.query_string.decode()}"
     return target
